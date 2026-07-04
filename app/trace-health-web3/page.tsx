@@ -75,7 +75,7 @@ const navigation: { label: HealthTab; icon: typeof LayoutDashboard }[] = [
 ];
 
 const healthTabs = navigation.map((item) => item.label);
-const demoWalletAddress = "0xEf6fd00000000000000000000000000000008577F";
+const savedContextWalletAddress = "0xEf6fdfe87081da6acC6E4755d095b8C23568577F";
 
 const tabDescriptions: Record<HealthTab, string> = {
   Home: "Web3 health dashboard",
@@ -1273,7 +1273,7 @@ export default function Web3HealthPage() {
   const mobilePrimaryNavigation = navigation.slice(0, 8);
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
-  const isDemoAccount = walletAddress.toLowerCase() === demoWalletAddress.toLowerCase();
+  const isDemoAccount = walletAddress.toLowerCase() === savedContextWalletAddress.toLowerCase();
 
   useEffect(() => {
     const updateSyncedAt = () => {
@@ -1385,11 +1385,6 @@ export default function Web3HealthPage() {
     }
   };
 
-  const useDemoAccount = () => {
-    setWalletError("");
-    setWalletAddress(demoWalletAddress);
-  };
-
   const toggleHealthPermission = (app: string, permission: string) => {
     setHealthPermissions((current) => {
       const existing = current[app] ?? [];
@@ -1424,76 +1419,70 @@ export default function Web3HealthPage() {
   if (!walletAddress) {
     return (
       <main className="min-h-screen bg-[#f6f8f4] text-[#101510]">
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_-12%,rgba(157,255,122,0.3),transparent_34rem),linear-gradient(180deg,#f8faf6,#eef3ed_54%,#f8faf7)]" />
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_52%_12%,rgba(157,255,122,0.34),transparent_30rem),radial-gradient(circle_at_24%_80%,rgba(16,21,16,0.1),transparent_24rem),linear-gradient(180deg,#fbfdf8,#eef5ec_58%,#f9fbf8)]" />
         <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-10">
-          <div className="grid w-full gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-            <div className="rounded-[2.2rem] border border-[#dfe7dc] bg-white/76 p-7 shadow-[0_32px_110px_rgba(16,21,16,0.09)] backdrop-blur-2xl sm:p-10">
-              <div className="flex items-center gap-3">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-[#101510] text-trace-green">
-                  <HeartPulse size={21} />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold tracking-[0.22em] text-[#526152]">HEALTH TRACE</p>
-                  <p className="text-sm text-[#7b877b]">Web3 health guardian</p>
-                </div>
-              </div>
+          <div className="relative w-full overflow-hidden rounded-[2.8rem] border border-[#dfe7dc] bg-white/76 p-7 shadow-[0_36px_130px_rgba(16,21,16,0.12)] backdrop-blur-2xl sm:p-10 lg:p-12">
+            <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-trace-green/20 blur-3xl" />
+            <div className="pointer-events-none absolute bottom-10 right-12 hidden h-64 w-64 rounded-[4rem] border border-[#101510]/10 bg-[radial-gradient(circle,rgba(157,255,122,0.22),transparent_66%)] lg:block" />
 
-              <p className="mt-12 text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">Create account or log in</p>
-              <h1 className="mt-4 max-w-3xl text-[clamp(3rem,7vw,6.4rem)] font-medium leading-[0.88] tracking-normal">
-                Start with zero.
-                <br />
-                Sync only what you own.
-              </h1>
-              <p className="mt-6 max-w-2xl text-base leading-8 text-[#667466]">
-                Connect your wallet to load your private Health Trace context, permissions, rewards, and action history.
-                Until then, no health data is shown.
-              </p>
-
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                <Button
-                  onClick={connectWallet}
-                  disabled={isWalletConnecting}
-                  className="h-13 rounded-full bg-[#101510] px-7 text-white hover:bg-[#253525]"
-                >
-                  {isWalletConnecting ? "Connecting..." : "Create account with wallet"}
-                </Button>
-                <Button
-                  onClick={connectWallet}
-                  disabled={isWalletConnecting}
-                  className="h-13 rounded-full border border-[#d9e1d7] bg-white px-7 text-[#101510] hover:bg-[#f1f6ee]"
-                >
-                  Log in with wallet
-                </Button>
-                <Button
-                  onClick={useDemoAccount}
-                  className="h-13 rounded-full border border-[#d9e1d7] bg-[#f8fbf6] px-7 text-[#526152] hover:bg-white sm:col-span-2"
-                >
-                  Use demo wallet with existing context
-                </Button>
-              </div>
-              {walletError ? <p className="mt-4 text-sm leading-6 text-rose-500">{walletError}</p> : null}
-            </div>
-
-            <div className="rounded-[2.2rem] border border-[#dfe7dc] bg-[#101510] p-7 text-white shadow-[0_32px_110px_rgba(16,21,16,0.14)]">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-trace-green/72">Before wallet sync</p>
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                {[
-                  ["Health context", "0"],
-                  ["Connected apps", "0"],
-                  ["Rewards", "0"],
-                  ["Proofs", "0"],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-[1.35rem] border border-white/10 bg-white/[0.055] p-5">
-                    <p className="text-4xl font-medium">{value}</p>
-                    <p className="mt-2 text-xs uppercase tracking-[0.16em] text-white/42">{label}</p>
+            <div className="relative flex flex-col gap-10 lg:min-h-[34rem] lg:justify-between">
+              <div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-12 items-center justify-center rounded-2xl bg-[#101510] text-trace-green shadow-[0_18px_40px_rgba(16,21,16,0.18)]">
+                      <HeartPulse size={21} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold tracking-[0.22em] text-[#526152]">HEALTH TRACE</p>
+                      <p className="text-sm text-[#7b877b]">Web3 health guardian</p>
+                    </div>
                   </div>
-                ))}
-              </div>
-              <div className="mt-6 rounded-[1.5rem] border border-trace-green/20 bg-trace-green/10 p-5">
-                <p className="text-lg font-medium">After wallet login</p>
-                <p className="mt-2 text-sm leading-6 text-white/58">
-                  Health Trace restores the prototype context you have been viewing: connected health apps, guardian state, rewards, and settings.
+                  <div className="hidden rounded-full border border-[#d9e1d7] bg-white/70 px-4 py-2 text-sm text-[#667466] sm:block">
+                    Private until connected
+                  </div>
+                </div>
+
+                <p className="mt-14 text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">Create account or log in</p>
+                <h1 className="mt-4 max-w-4xl text-[clamp(3.5rem,8vw,7.7rem)] font-medium leading-[0.86] tracking-normal">
+                  Own your health context.
+                </h1>
+                <p className="mt-7 max-w-2xl text-lg leading-8 text-[#667466]">
+                  Connect a wallet to create or restore your private Health Trace account. New wallets start empty.
+                  The saved prototype context loads only for your registered wallet.
                 </p>
+              </div>
+
+              <div>
+                <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
+                  <Button
+                    onClick={connectWallet}
+                    disabled={isWalletConnecting}
+                    className="h-13 rounded-full bg-[#101510] px-7 text-white shadow-[0_18px_42px_rgba(16,21,16,0.16)] hover:bg-[#253525]"
+                  >
+                    {isWalletConnecting ? "Connecting..." : "Create account with wallet"}
+                  </Button>
+                  <Button
+                    onClick={connectWallet}
+                    disabled={isWalletConnecting}
+                    className="h-13 rounded-full border border-[#d9e1d7] bg-white px-7 text-[#101510] hover:bg-[#f1f6ee]"
+                  >
+                    Log in with wallet
+                  </Button>
+                </div>
+                {walletError ? <p className="mt-4 max-w-2xl text-sm leading-6 text-rose-500">{walletError}</p> : null}
+
+                <div className="mt-8 grid max-w-4xl gap-3 sm:grid-cols-3">
+                  {[
+                    ["Zero by default", "No health data appears before wallet consent."],
+                    ["User controlled", "Apps, proofs, and permissions are scoped to the account."],
+                    ["Private context", "Existing context restores only for the registered wallet."],
+                  ].map(([title, copy]) => (
+                    <div key={title} className="rounded-[1.4rem] border border-[#dfe7dc] bg-white/72 p-4">
+                      <p className="text-sm font-semibold text-[#101510]">{title}</p>
+                      <p className="mt-2 text-sm leading-6 text-[#667466]">{copy}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
