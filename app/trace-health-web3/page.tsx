@@ -1011,7 +1011,21 @@ function MobileTabScreen({
                     {isDone ? <Check size={16} strokeWidth={3} /> : <Icon size={16} />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className={`block text-sm font-medium leading-5 ${isDone ? "text-white" : "text-[#172117]"}`}>{mission.label}</span>
+                    <span className={`block text-sm font-medium leading-5 ${isDone ? "text-white" : "text-[#172117]"}`}>
+                      {mission.label === "Complete 20-20-20 eye break" ? (
+                        <>
+                          <span className="block">Complete 20-20-20</span>
+                          <span className="block">eye break</span>
+                        </>
+                      ) : mission.label === "Log FOMO / FUD check-in" ? (
+                        <>
+                          <span className="block">Log FOMO / FUD</span>
+                          <span className="block">check in</span>
+                        </>
+                      ) : (
+                        mission.label
+                      )}
+                    </span>
                     <span className={`mt-0.5 block text-xs ${isDone ? "text-white/54" : "text-[#687668]"}`}>{isDone ? "Completed" : mission.status}</span>
                   </span>
                   <span className="text-xs font-semibold text-[#2f7d3c]">{isDone ? "Earned" : mission.reward}</span>
@@ -1230,6 +1244,7 @@ function MobileTabScreen({
 
 export default function Web3HealthPage() {
   const [activeTab, setActiveTab] = useState<HealthTab>("Home");
+  const [syncedAt, setSyncedAt] = useState("");
   const [guardianOpen, setGuardianOpen] = useState(true);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [walletAddress, setWalletAddress] = useState("");
@@ -1257,6 +1272,16 @@ export default function Web3HealthPage() {
   const mobilePrimaryNavigation = navigation.slice(0, 8);
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
+
+  useEffect(() => {
+    const updateSyncedAt = () => {
+      setSyncedAt(new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()));
+    };
+
+    updateSyncedAt();
+    const timer = window.setInterval(updateSyncedAt, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
@@ -1428,7 +1453,7 @@ export default function Web3HealthPage() {
           </nav>
 
           <div className="mt-5 rounded-full border border-[#d9e1d7] bg-white/70 px-4 py-2 text-center text-sm text-[#526152] shadow-[0_18px_60px_rgba(16,21,16,0.06)]">
-            Web3 context synced 08:42
+            {syncedAt ? `Synced at ${syncedAt}` : "Synced"}
           </div>
 
           <div className="mt-auto rounded-[1.5rem] border border-[#dfe7dc] bg-[#f8fbf6] p-5">
@@ -2409,19 +2434,25 @@ export default function Web3HealthPage() {
                       <p className="text-sm font-semibold uppercase tracking-[0.24em] text-trace-green/72">
                         On-chain health tasks
                       </p>
-                      <h2 className="mt-4 text-[clamp(2.4rem,4vw,5rem)] font-medium leading-[0.9]">
+                      <h2 className="mt-4 text-[clamp(2rem,3.1vw,3.85rem)] font-medium leading-[0.95]">
                         Rewards for recovery, not speculation.
                       </h2>
-                      <div className="mt-8 grid grid-cols-2 gap-3">
+                      <div className="mt-7 grid grid-cols-2 gap-3">
                         {[
                           ["HT Points", rewardPoints.toLocaleString()],
                           ["Level", "4"],
                           ["Streak", "6 days"],
                           ["Badge status", "Mint-ready"],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-[1.25rem] border border-white/10 bg-white/[0.055] p-4">
-                            <p className="text-2xl font-medium">{value}</p>
-                            <p className="mt-1 text-xs text-white/42">{label}</p>
+                        ].map(([label, value], index) => (
+                          <div
+                            key={label}
+                            className="relative overflow-hidden rounded-[1.3rem] border border-trace-green/20 bg-[radial-gradient(circle_at_20%_10%,rgba(157,255,122,0.18),transparent_36%),rgba(255,255,255,0.055)] p-4 ring-1 ring-white/5"
+                          >
+                            <div className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full border border-trace-green/20 bg-trace-green/10 text-[0.65rem] font-semibold text-trace-green">
+                              {index + 1}
+                            </div>
+                            <p className="pr-8 text-xl font-medium leading-tight">{value}</p>
+                            <p className="mt-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/42">{label}</p>
                           </div>
                         ))}
                       </div>
@@ -2446,7 +2477,21 @@ export default function Web3HealthPage() {
                                   {isDone ? "Completed" : mission.status}
                                 </span>
                               </div>
-                              <h3 className={`text-xl font-medium ${isDone ? "text-white" : "text-[#172117]"}`}>{mission.label}</h3>
+                              <h3 className={`text-lg font-medium leading-tight ${isDone ? "text-white" : "text-[#172117]"}`}>
+                                {mission.label === "Complete 20-20-20 eye break" ? (
+                                  <>
+                                    <span className="block">Complete 20-20-20</span>
+                                    <span className="block">eye break</span>
+                                  </>
+                                ) : mission.label === "Log FOMO / FUD check-in" ? (
+                                  <>
+                                    <span className="block">Log FOMO / FUD</span>
+                                    <span className="block">check in</span>
+                                  </>
+                                ) : (
+                                  mission.label
+                                )}
+                              </h3>
                               <p className="mt-3 text-sm font-semibold text-[#2f7d3c]">{isDone ? "Reward earned" : mission.reward}</p>
                             </motion.article>
                           );
@@ -2457,7 +2502,7 @@ export default function Web3HealthPage() {
                         {healthBadges.map((badge) => (
                           <div key={badge.label} className="rounded-[1.35rem] border border-[#e1e9df] bg-[#f8fbf6] p-5">
                             <ShieldCheck className="size-5 text-[#2f7d3c]" />
-                            <p className="mt-4 text-lg font-medium text-[#172117]">{badge.label}</p>
+                            <p className="mt-4 whitespace-nowrap text-base font-medium text-[#172117]">{badge.label}</p>
                             <p className="mt-2 text-sm leading-5 text-[#687668]">{badge.detail}</p>
                             <p className="mt-4 text-sm font-medium text-[#2f7d3c]">{badge.status}</p>
                           </div>
