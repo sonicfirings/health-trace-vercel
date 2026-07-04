@@ -1418,74 +1418,81 @@ export default function Web3HealthPage() {
 
   if (!walletAddress) {
     return (
-      <main className="min-h-screen bg-[#f6f8f4] text-[#101510]">
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_52%_12%,rgba(157,255,122,0.34),transparent_30rem),radial-gradient(circle_at_24%_80%,rgba(16,21,16,0.1),transparent_24rem),linear-gradient(180deg,#fbfdf8,#eef5ec_58%,#f9fbf8)]" />
-        <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-10">
-          <div className="relative w-full overflow-hidden rounded-[2.8rem] border border-[#dfe7dc] bg-white/76 p-7 shadow-[0_36px_130px_rgba(16,21,16,0.12)] backdrop-blur-2xl sm:p-10 lg:p-12">
-            <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-trace-green/20 blur-3xl" />
-            <div className="pointer-events-none absolute bottom-10 right-12 hidden h-64 w-64 rounded-[4rem] border border-[#101510]/10 bg-[radial-gradient(circle,rgba(157,255,122,0.22),transparent_66%)] lg:block" />
+      <main className="min-h-screen overflow-hidden bg-[#f3f7f0] text-[#101510]">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(149,255,122,0.42),transparent_27rem),radial-gradient(circle_at_50%_80%,rgba(16,21,16,0.12),transparent_32rem),linear-gradient(180deg,#fbfff8,#edf4eb_54%,#f9fbf7)]" />
+        <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-10">
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            className="relative w-full overflow-hidden rounded-[3rem] border border-[#dfe9dc] bg-white/70 p-5 shadow-[0_42px_150px_rgba(16,21,16,0.16)] backdrop-blur-3xl sm:p-8"
+          >
+            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.9),rgba(218,255,205,0.44)_45%,rgba(255,255,255,0.72))]" />
+            <div className="absolute left-1/2 top-1/2 size-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-trace-green/20 blur-3xl" />
 
-            <div className="relative flex flex-col gap-10 lg:min-h-[34rem] lg:justify-between">
-              <div>
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-12 items-center justify-center rounded-2xl bg-[#101510] text-trace-green shadow-[0_18px_40px_rgba(16,21,16,0.18)]">
-                      <HeartPulse size={21} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold tracking-[0.22em] text-[#526152]">HEALTH TRACE</p>
-                      <p className="text-sm text-[#7b877b]">Web3 health guardian</p>
-                    </div>
+            <div className="relative grid min-h-[40rem] overflow-hidden rounded-[2.45rem] border border-white/70 bg-[#0d150f] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] lg:grid-cols-[1fr_25rem]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_28%,rgba(149,255,122,0.2),transparent_23rem),radial-gradient(circle_at_78%_72%,rgba(110,190,255,0.14),transparent_18rem)]" />
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/36 to-transparent" />
+
+              <div className="relative flex flex-col justify-between p-7 sm:p-10 lg:p-12">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-13 items-center justify-center rounded-2xl bg-white text-[#101510] shadow-[0_18px_50px_rgba(157,255,122,0.15)]">
+                    <HeartPulse size={22} />
                   </div>
-                  <div className="hidden rounded-full border border-[#d9e1d7] bg-white/70 px-4 py-2 text-sm text-[#667466] sm:block">
-                    Private until connected
+                  <div>
+                    <p className="text-sm font-semibold tracking-[0.26em] text-white/82">HEALTH TRACE</p>
+                    <p className="text-sm text-white/46">Web3 health guardian</p>
                   </div>
                 </div>
 
-                <p className="mt-14 text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">Create account or log in</p>
-                <h1 className="mt-4 max-w-4xl text-[clamp(3.5rem,8vw,7.7rem)] font-medium leading-[0.86] tracking-normal">
-                  Own your health context.
-                </h1>
-                <p className="mt-7 max-w-2xl text-lg leading-8 text-[#667466]">
-                  Connect a wallet to create or restore your private Health Trace account. New wallets start empty.
-                  The saved prototype context loads only for your registered wallet.
-                </p>
+                <div className="py-14">
+                  <h1 className="max-w-4xl text-[clamp(4rem,8.6vw,8.8rem)] font-medium leading-[0.83] tracking-normal">
+                    Own your
+                    <br />
+                    health context.
+                  </h1>
+                  <p className="mt-8 max-w-2xl text-xl leading-9 text-white/62">
+                    Connect your wallet to restore Health Trace, or create a new private account with no health context shown until you choose what to sync.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="grid max-w-3xl gap-4 sm:grid-cols-2">
+                    <Button
+                      onClick={connectWallet}
+                      disabled={isWalletConnecting}
+                      className="h-16 rounded-full bg-trace-green px-8 text-base font-semibold text-[#071006] shadow-[0_18px_54px_rgba(149,255,122,0.28)] hover:bg-[#a7ff84]"
+                    >
+                      <Wallet className="mr-2 size-5" />
+                      {isWalletConnecting ? "Connecting..." : "Create account"}
+                    </Button>
+                    <Button
+                      onClick={connectWallet}
+                      disabled={isWalletConnecting}
+                      className="h-16 rounded-full border border-white/18 bg-white/[0.08] px-8 text-base font-semibold text-white hover:bg-white/[0.13]"
+                    >
+                      Log in
+                      <ArrowRight className="ml-2 size-5" />
+                    </Button>
+                  </div>
+                  {walletError ? <p className="mt-5 max-w-2xl text-sm leading-6 text-rose-200">{walletError}</p> : null}
+                </div>
               </div>
 
-              <div>
-                <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
-                  <Button
-                    onClick={connectWallet}
-                    disabled={isWalletConnecting}
-                    className="h-13 rounded-full bg-[#101510] px-7 text-white shadow-[0_18px_42px_rgba(16,21,16,0.16)] hover:bg-[#253525]"
-                  >
-                    {isWalletConnecting ? "Connecting..." : "Create account with wallet"}
-                  </Button>
-                  <Button
-                    onClick={connectWallet}
-                    disabled={isWalletConnecting}
-                    className="h-13 rounded-full border border-[#d9e1d7] bg-white px-7 text-[#101510] hover:bg-[#f1f6ee]"
-                  >
-                    Log in with wallet
-                  </Button>
+              <div className="relative hidden border-l border-white/10 bg-white/[0.045] p-8 lg:flex lg:flex-col lg:justify-between">
+                <div className="ml-auto flex size-36 items-center justify-center rounded-full border border-trace-green/40 bg-trace-green/10 shadow-[0_0_80px_rgba(149,255,122,0.18)]">
+                  <div className="flex size-24 items-center justify-center rounded-full border border-white/18 bg-[#101510] text-trace-green">
+                    <ShieldCheck size={34} />
+                  </div>
                 </div>
-                {walletError ? <p className="mt-4 max-w-2xl text-sm leading-6 text-rose-500">{walletError}</p> : null}
-
-                <div className="mt-8 grid max-w-4xl gap-3 sm:grid-cols-3">
-                  {[
-                    ["Zero by default", "No health data appears before wallet consent."],
-                    ["User controlled", "Apps, proofs, and permissions are scoped to the account."],
-                    ["Private context", "Existing context restores only for the registered wallet."],
-                  ].map(([title, copy]) => (
-                    <div key={title} className="rounded-[1.4rem] border border-[#dfe7dc] bg-white/72 p-4">
-                      <p className="text-sm font-semibold text-[#101510]">{title}</p>
-                      <p className="mt-2 text-sm leading-6 text-[#667466]">{copy}</p>
-                    </div>
-                  ))}
+                <div className="rounded-[1.8rem] border border-white/12 bg-black/18 p-6">
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trace-green">Wallet-gated context</p>
+                  <p className="mt-4 text-2xl font-medium leading-tight">Only the registered wallet restores the saved health intelligence.</p>
+                  <p className="mt-4 text-sm leading-6 text-white/48">New wallets enter a clean account with zero synced sources.</p>
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         </section>
       </main>
     );
