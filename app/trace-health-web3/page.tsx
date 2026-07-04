@@ -76,6 +76,22 @@ const navigation: { label: HealthTab; icon: typeof LayoutDashboard }[] = [
 
 const healthTabs = navigation.map((item) => item.label);
 const savedContextWalletAddress = "0xEf6fdfe87081da6acC6E4755d095b8C23568577F";
+const walletStorageKey = "health-trace-web3-wallet";
+
+const demoConnectedHealthApps = ["Apple Health", "Samsung Health", "Google Fit"];
+const emptyHealthPermissions: Record<string, string[]> = {
+  "Apple Health": [],
+  "Samsung Health": [],
+  "Google Fit": [],
+  "Mi Fitness": [],
+};
+
+const demoHealthPermissions: Record<string, string[]> = {
+  "Apple Health": ["Sleep", "Heart rate"],
+  "Samsung Health": ["Sleep", "Activity"],
+  "Google Fit": ["Activity"],
+  "Mi Fitness": [],
+};
 
 const tabDescriptions: Record<HealthTab, string> = {
   Home: "Web3 health dashboard",
@@ -161,6 +177,44 @@ const briefItems = [
     title: "Your attention load is high.",
     detail: "Take an eye break before another long Discord, X, or chart session.",
     color: "bg-trace-green",
+  },
+];
+
+const emptyHomeSignals = homeSignals.map((signal) => ({
+  ...signal,
+  value:
+    signal.label === "Web3 Health Score"
+      ? "0"
+      : signal.label === "Proof Streak"
+        ? "0 days"
+        : "--",
+  detail:
+    signal.label === "Web3 Health Score"
+      ? "Connect health apps to build a baseline"
+      : signal.label === "Proof Streak"
+        ? "No healthy actions verified yet"
+        : "No source connected yet",
+  chart: [0, 0, 0, 0, 0, 0, 0],
+}));
+
+const emptyBriefItems = [
+  {
+    status: "Start",
+    title: "No health sources connected yet.",
+    detail: "Connect Apple Health, Samsung Health, Google Fit, or Mi Fitness to begin.",
+    color: "bg-trace-green",
+  },
+  {
+    status: "Waiting",
+    title: "Guardian has no baseline yet.",
+    detail: "Health Trace needs permissioned signals before it can reason about patterns.",
+    color: "bg-sky-300",
+  },
+  {
+    status: "Private",
+    title: "Your account is ready.",
+    detail: "Nothing is synced until you choose exactly which sources and data types to connect.",
+    color: "bg-emerald-300",
   },
 ];
 
@@ -1251,7 +1305,7 @@ export default function Web3HealthPage() {
   const [walletAddress, setWalletAddress] = useState("");
   const [walletError, setWalletError] = useState("");
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
-  const [eyeBreakCount, setEyeBreakCount] = useState(2);
+  const [eyeBreakCount, setEyeBreakCount] = useState(0);
   const [isEyeResetOnCooldown, setIsEyeResetOnCooldown] = useState(false);
   const [eyeResetCooldownSeconds, setEyeResetCooldownSeconds] = useState(0);
   const [postureResetDone, setPostureResetDone] = useState(false);
@@ -1260,20 +1314,37 @@ export default function Web3HealthPage() {
   const [journalSelections, setJournalSelections] = useState<Record<string, string>>({});
   const [pendingJournalCheckIn, setPendingJournalCheckIn] = useState("");
   const [completedRewardMissions, setCompletedRewardMissions] = useState<string[]>([]);
-  const [rewardPoints, setRewardPoints] = useState(1280);
+  const [rewardPoints, setRewardPoints] = useState(0);
   const [selectedHealthApp, setSelectedHealthApp] = useState(healthApps[0].label);
-  const [connectedHealthApps, setConnectedHealthApps] = useState(["Apple Health", "Samsung Health", "Google Fit"]);
+  const [connectedHealthApps, setConnectedHealthApps] = useState<string[]>([]);
   const [pendingDisconnectApp, setPendingDisconnectApp] = useState("");
-  const [healthPermissions, setHealthPermissions] = useState<Record<string, string[]>>({
-    "Apple Health": ["Sleep", "Heart rate"],
-    "Samsung Health": ["Sleep", "Activity"],
-    "Google Fit": ["Activity"],
-    "Mi Fitness": [],
-  });
+  const [healthPermissions, setHealthPermissions] = useState<Record<string, string[]>>(emptyHealthPermissions);
   const mobilePrimaryNavigation = navigation.slice(0, 8);
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
   const isDemoAccount = walletAddress.toLowerCase() === savedContextWalletAddress.toLowerCase();
+  const dashboardTrend = isDemoAccount
+    ? recoveryTrend
+    : recoveryTrend.map((item) => ({ ...item, score: 0, sleep: 0, market: 0 }));
+  const dashboardSignals = isDemoAccount ? homeSignals : emptyHomeSignals;
+  const dashboardBriefItems = isDemoAccount ? briefItems : emptyBriefItems;
+  const healthScore = isDemoAccount ? "86" : "0";
+  const healthScoreLabel = isDemoAccount ? "Stable" : "No data";
+  const currentState = isDemoAccount ? "High attention load" : "No baseline yet";
+  const mobileSummaryStats = isDemoAccount
+    ? [
+        ["Stress", "62", "Watch"],
+        ["Sleep", "1h 48m", "Debt"],
+        ["Screen", "91m", "Break"],
+      ]
+    : [
+        ["Apps", "0", "Connect"],
+        ["Score", "0", "No data"],
+        ["Proofs", "0", "Start"],
+      ];
+  const guardianRecommendation = isDemoAccount
+    ? "Do deep work before checking markets. Take an eye break now, and avoid major decisions after midnight."
+    : "Connect a health source in Settings to start building your private baseline.";
 
   useEffect(() => {
     const updateSyncedAt = () => {
@@ -1291,6 +1362,42 @@ export default function Web3HealthPage() {
       setActiveTab(tab as HealthTab);
     }
   }, []);
+
+  useEffect(() => {
+    const storedWallet = window.localStorage.getItem(walletStorageKey);
+    if (storedWallet) {
+      setWalletAddress(storedWallet);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!walletAddress) {
+      window.localStorage.removeItem(walletStorageKey);
+      return;
+    }
+
+    window.localStorage.setItem(walletStorageKey, walletAddress);
+
+    if (walletAddress.toLowerCase() === savedContextWalletAddress.toLowerCase()) {
+      setEyeBreakCount(2);
+      setRewardPoints(1280);
+      setConnectedHealthApps(demoConnectedHealthApps);
+      setHealthPermissions(demoHealthPermissions);
+      return;
+    }
+
+    setEyeBreakCount(0);
+    setRewardPoints(0);
+    setConnectedHealthApps([]);
+    setHealthPermissions(emptyHealthPermissions);
+    setCompletedRewardMissions([]);
+    setCompletedGuardianActions([]);
+    setCompletedMarketActions([]);
+    setJournalSelections({});
+    setPostureResetDone(false);
+    setIsEyeResetOnCooldown(false);
+    setEyeResetCooldownSeconds(0);
+  }, [walletAddress]);
 
   const eyeBreakMetrics = eyeBreaks.map((item) =>
     item.label === "20-20-20 breaks"
@@ -1446,10 +1553,10 @@ export default function Web3HealthPage() {
                 </div>
 
                 <div className="py-14">
-                  <h1 className="max-w-5xl text-[clamp(4rem,8.6vw,8.8rem)] font-medium leading-[0.83] tracking-normal">
+                  <h1 className="max-w-5xl text-[clamp(3.8rem,7.6vw,8.1rem)] font-medium leading-[0.86] tracking-normal">
                     Own your
                     <br />
-                    health context.
+                    <span className="whitespace-nowrap">health context.</span>
                   </h1>
                   <p className="mt-8 max-w-2xl text-xl leading-9 text-white/62">
                     Connect your wallet to restore Health Trace, or create a new private account with no health context shown until you choose what to sync.
@@ -1480,56 +1587,6 @@ export default function Web3HealthPage() {
               </div>
             </div>
           </motion.div>
-        </section>
-      </main>
-    );
-  }
-
-  if (!isDemoAccount) {
-    return (
-      <main className="min-h-screen bg-[#f6f8f4] text-[#101510]">
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_-12%,rgba(157,255,122,0.22),transparent_34rem),linear-gradient(180deg,#f8faf6,#eef3ed_54%,#f8faf7)]" />
-        <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-5xl items-center px-6 py-10">
-          <div className="w-full rounded-[2.2rem] border border-[#dfe7dc] bg-white/78 p-8 shadow-[0_32px_110px_rgba(16,21,16,0.09)] backdrop-blur-2xl sm:p-10">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">New Health Trace account</p>
-                <h1 className="mt-4 text-[clamp(2.6rem,6vw,5.6rem)] font-medium leading-[0.9] tracking-normal">
-                  Your context starts empty.
-                </h1>
-                <p className="mt-5 max-w-2xl text-base leading-8 text-[#667466]">
-                  Wallet {formatWalletAddress(walletAddress)} is connected, but Health Trace does not recognize saved health context for this account yet.
-                </p>
-              </div>
-              <Button
-                onClick={() => setWalletAddress("")}
-                className="rounded-full border border-[#d9e1d7] bg-white px-5 text-[#526152] hover:bg-[#f1f6ee]"
-              >
-                Switch wallet
-              </Button>
-            </div>
-
-            <div className="mt-8 grid gap-3 sm:grid-cols-4">
-              {[
-                ["Health context", "0"],
-                ["Connected apps", "0"],
-                ["Rewards", "0"],
-                ["Proofs", "0"],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-[1.4rem] border border-[#e1e9df] bg-[#fbfdf9] p-5">
-                  <p className="text-4xl font-medium">{value}</p>
-                  <p className="mt-2 text-xs uppercase tracking-[0.16em] text-[#7a867a]">{label}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-6 rounded-[1.6rem] border border-[#dfe7dc] bg-[#101510] p-6 text-white">
-              <p className="text-lg font-medium">Next step: connect health sources</p>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">
-                In production, this wallet would choose Apple Health, Samsung Health, Google Fit, or Mi Fitness permissions before any dashboard data appears.
-              </p>
-            </div>
-          </div>
         </section>
       </main>
     );
@@ -1759,7 +1816,7 @@ export default function Web3HealthPage() {
                           </div>
                           <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5 shadow-[0_18px_55px_rgba(157,255,122,0.18)]">
                             <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510]">
-                              <p className="text-2xl font-medium leading-none">86</p>
+                              <p className="text-2xl font-medium leading-none">{healthScore}</p>
                               <p className="mt-1 text-[0.58rem] text-trace-green">Score</p>
                             </div>
                           </div>
@@ -1771,11 +1828,7 @@ export default function Web3HealthPage() {
                         </p>
 
                         <div className="mt-5 grid grid-cols-3 gap-2">
-                          {[
-                            ["Stress", "62", "Watch"],
-                            ["Sleep", "1h 48m", "Debt"],
-                            ["Screen", "91m", "Break"],
-                          ].map(([label, value, status]) => (
+                          {mobileSummaryStats.map(([label, value, status]) => (
                             <div key={label} className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-3 backdrop-blur">
                               <p className="text-[0.65rem] text-white/42">{label}</p>
                               <p className="mt-1 text-lg font-medium leading-none">{value}</p>
@@ -1802,7 +1855,7 @@ export default function Web3HealthPage() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
-                        {homeSignals.map((signal, index) => {
+                        {dashboardSignals.map((signal, index) => {
                           const Icon = signal.icon;
                           return (
                             <motion.div
@@ -1900,15 +1953,15 @@ export default function Web3HealthPage() {
                               </p>
                               <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5">
                                 <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510]">
-                                  <p className="text-2xl font-medium leading-none">86</p>
-                                  <p className="mt-1 text-[0.62rem] text-trace-green">Stable</p>
+                                  <p className="text-2xl font-medium leading-none">{healthScore}</p>
+                                  <p className="mt-1 text-[0.62rem] text-trace-green">{healthScoreLabel}</p>
                                 </div>
                               </div>
                             </div>
                             <div className="rounded-[1.35rem] border border-[#dfe7dc] bg-[#f7faf5] p-3 text-center">
                               <p className="text-[0.68rem] text-[#6b756b]">Current state</p>
                               <p className="mt-1 text-lg font-medium leading-tight text-[#172117]">
-                                High attention load
+                                {currentState}
                               </p>
                             </div>
                           </div>
@@ -1916,7 +1969,7 @@ export default function Web3HealthPage() {
 
                         <div className="mt-4 h-32 overflow-visible rounded-[1.5rem] border border-[#e0e8dd] bg-[#fbfdf9] px-3 py-4 sm:h-40 sm:px-6">
                           <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={recoveryTrend} margin={{ left: 22, right: 42, top: 8, bottom: 0 }}>
+                            <LineChart data={dashboardTrend} margin={{ left: 22, right: 42, top: 8, bottom: 0 }}>
                               <XAxis
                                 dataKey="day"
                                 axisLine={false}
@@ -1926,7 +1979,7 @@ export default function Web3HealthPage() {
                                 tickLine={false}
                                 tick={{ fill: "#7a867a", fontSize: 12 }}
                               />
-                              <YAxis hide domain={[20, 100]} />
+                              <YAxis hide domain={[0, 100]} />
                               <Tooltip
                                 cursor={{ stroke: "#b7c4b2", strokeDasharray: "4 6" }}
                                 contentStyle={{
@@ -1950,7 +2003,7 @@ export default function Web3HealthPage() {
                           Today&apos;s Web3 Health Brief
                         </p>
                         <div className="space-y-2.5">
-                          {briefItems.map((item) => (
+                          {dashboardBriefItems.map((item) => (
                             <div key={item.title} className="rounded-[1.35rem] border border-[#e1e9df] bg-[#f9fbf8] p-3">
                               <div className="flex gap-3">
                                 <span className={`mt-1.5 size-2.5 rounded-full ${item.color}`} />
@@ -1966,8 +2019,7 @@ export default function Web3HealthPage() {
                         <div className="mt-3 rounded-[1.35rem] border border-[#dce6d9] bg-[#eef8ea] p-3">
                           <p className="text-xs font-semibold text-[#2f7d3c]">Guardian Recommendation</p>
                           <p className="mt-1.5 text-sm font-medium leading-6 text-[#253525]">
-                            Do deep work before checking markets. Take an eye break now, and avoid major
-                            decisions after midnight.
+                            {guardianRecommendation}
                           </p>
                         </div>
                       </section>
@@ -1983,7 +2035,7 @@ export default function Web3HealthPage() {
                         <h2 className="mt-1 text-2xl font-medium">Health context for Web3 behavior</h2>
                       </div>
                       <div className="grid flex-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-                        {homeSignals.map((signal) => (
+                        {dashboardSignals.map((signal) => (
                           <MetricCard key={signal.label} {...signal} />
                         ))}
                       </div>
@@ -2714,13 +2766,27 @@ export default function Web3HealthPage() {
                             <Wallet size={20} />
                           </div>
                         </div>
-                        <Button
-                          onClick={connectWallet}
-                          disabled={isWalletConnecting}
-                          className="mt-6 h-11 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525]"
-                        >
-                          {walletAddress ? "Wallet connected" : isWalletConnecting ? "Connecting..." : "Connect wallet"}
-                        </Button>
+                        <div className="mt-6 grid gap-2">
+                          <Button
+                            onClick={connectWallet}
+                            disabled={isWalletConnecting || Boolean(walletAddress)}
+                            className="h-11 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525] disabled:opacity-100"
+                          >
+                            {walletAddress ? "Wallet connected" : isWalletConnecting ? "Connecting..." : "Connect wallet"}
+                          </Button>
+                          {walletAddress ? (
+                            <Button
+                              onClick={() => {
+                                setWalletError("");
+                                setWalletAddress("");
+                                setActiveTab("Home");
+                              }}
+                              className="h-11 w-full rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                            >
+                              Log out
+                            </Button>
+                          ) : null}
+                        </div>
                         {walletError ? <p className="mt-3 text-xs leading-5 text-rose-500">{walletError}</p> : null}
                       </motion.article>
 
