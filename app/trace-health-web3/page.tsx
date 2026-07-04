@@ -1414,6 +1414,81 @@ export default function Web3HealthPage() {
     setPendingDisconnectApp("");
   };
 
+  if (!walletAddress) {
+    return (
+      <main className="min-h-screen bg-[#f6f8f4] text-[#101510]">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_-12%,rgba(157,255,122,0.3),transparent_34rem),linear-gradient(180deg,#f8faf6,#eef3ed_54%,#f8faf7)]" />
+        <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-10">
+          <div className="grid w-full gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+            <div className="rounded-[2.2rem] border border-[#dfe7dc] bg-white/76 p-7 shadow-[0_32px_110px_rgba(16,21,16,0.09)] backdrop-blur-2xl sm:p-10">
+              <div className="flex items-center gap-3">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-[#101510] text-trace-green">
+                  <HeartPulse size={21} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold tracking-[0.22em] text-[#526152]">HEALTH TRACE</p>
+                  <p className="text-sm text-[#7b877b]">Web3 health guardian</p>
+                </div>
+              </div>
+
+              <p className="mt-12 text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">Create account or log in</p>
+              <h1 className="mt-4 max-w-3xl text-[clamp(3rem,7vw,6.4rem)] font-medium leading-[0.88] tracking-normal">
+                Start with zero.
+                <br />
+                Sync only what you own.
+              </h1>
+              <p className="mt-6 max-w-2xl text-base leading-8 text-[#667466]">
+                Connect your wallet to load your private Health Trace context, permissions, rewards, and action history.
+                Until then, no health data is shown.
+              </p>
+
+              <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                <Button
+                  onClick={connectWallet}
+                  disabled={isWalletConnecting}
+                  className="h-13 rounded-full bg-[#101510] px-7 text-white hover:bg-[#253525]"
+                >
+                  {isWalletConnecting ? "Connecting..." : "Create account with wallet"}
+                </Button>
+                <Button
+                  onClick={connectWallet}
+                  disabled={isWalletConnecting}
+                  className="h-13 rounded-full border border-[#d9e1d7] bg-white px-7 text-[#101510] hover:bg-[#f1f6ee]"
+                >
+                  Log in with wallet
+                </Button>
+              </div>
+              {walletError ? <p className="mt-4 text-sm leading-6 text-rose-500">{walletError}</p> : null}
+            </div>
+
+            <div className="rounded-[2.2rem] border border-[#dfe7dc] bg-[#101510] p-7 text-white shadow-[0_32px_110px_rgba(16,21,16,0.14)]">
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-trace-green/72">Before wallet sync</p>
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                {[
+                  ["Health context", "0"],
+                  ["Connected apps", "0"],
+                  ["Rewards", "0"],
+                  ["Proofs", "0"],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-[1.35rem] border border-white/10 bg-white/[0.055] p-5">
+                    <p className="text-4xl font-medium">{value}</p>
+                    <p className="mt-2 text-xs uppercase tracking-[0.16em] text-white/42">{label}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 rounded-[1.5rem] border border-trace-green/20 bg-trace-green/10 p-5">
+                <p className="text-lg font-medium">After wallet login</p>
+                <p className="mt-2 text-sm leading-6 text-white/58">
+                  Health Trace restores the prototype context you have been viewing: connected health apps, guardian state, rewards, and settings.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#f6f8f4] text-[#101510]">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_48%_-14%,rgba(157,255,122,0.28),transparent_38rem),radial-gradient(circle_at_100%_18%,rgba(148,203,255,0.12),transparent_30rem),linear-gradient(180deg,#f8faf6,#eef3ed_48%,#f8faf7)]" />
