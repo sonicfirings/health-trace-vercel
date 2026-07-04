@@ -75,6 +75,7 @@ const navigation: { label: HealthTab; icon: typeof LayoutDashboard }[] = [
 ];
 
 const healthTabs = navigation.map((item) => item.label);
+const demoWalletAddress = "0xEf6fd00000000000000000000000000000008577F";
 
 const tabDescriptions: Record<HealthTab, string> = {
   Home: "Web3 health dashboard",
@@ -1272,6 +1273,7 @@ export default function Web3HealthPage() {
   const mobilePrimaryNavigation = navigation.slice(0, 8);
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
+  const isDemoAccount = walletAddress.toLowerCase() === demoWalletAddress.toLowerCase();
 
   useEffect(() => {
     const updateSyncedAt = () => {
@@ -1383,6 +1385,11 @@ export default function Web3HealthPage() {
     }
   };
 
+  const useDemoAccount = () => {
+    setWalletError("");
+    setWalletAddress(demoWalletAddress);
+  };
+
   const toggleHealthPermission = (app: string, permission: string) => {
     setHealthPermissions((current) => {
       const existing = current[app] ?? [];
@@ -1457,6 +1464,12 @@ export default function Web3HealthPage() {
                 >
                   Log in with wallet
                 </Button>
+                <Button
+                  onClick={useDemoAccount}
+                  className="h-13 rounded-full border border-[#d9e1d7] bg-[#f8fbf6] px-7 text-[#526152] hover:bg-white sm:col-span-2"
+                >
+                  Use demo wallet with existing context
+                </Button>
               </div>
               {walletError ? <p className="mt-4 text-sm leading-6 text-rose-500">{walletError}</p> : null}
             </div>
@@ -1482,6 +1495,56 @@ export default function Web3HealthPage() {
                   Health Trace restores the prototype context you have been viewing: connected health apps, guardian state, rewards, and settings.
                 </p>
               </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (!isDemoAccount) {
+    return (
+      <main className="min-h-screen bg-[#f6f8f4] text-[#101510]">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_-12%,rgba(157,255,122,0.22),transparent_34rem),linear-gradient(180deg,#f8faf6,#eef3ed_54%,#f8faf7)]" />
+        <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-5xl items-center px-6 py-10">
+          <div className="w-full rounded-[2.2rem] border border-[#dfe7dc] bg-white/78 p-8 shadow-[0_32px_110px_rgba(16,21,16,0.09)] backdrop-blur-2xl sm:p-10">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">New Health Trace account</p>
+                <h1 className="mt-4 text-[clamp(2.6rem,6vw,5.6rem)] font-medium leading-[0.9] tracking-normal">
+                  Your context starts empty.
+                </h1>
+                <p className="mt-5 max-w-2xl text-base leading-8 text-[#667466]">
+                  Wallet {formatWalletAddress(walletAddress)} is connected, but Health Trace does not recognize saved health context for this account yet.
+                </p>
+              </div>
+              <Button
+                onClick={() => setWalletAddress("")}
+                className="rounded-full border border-[#d9e1d7] bg-white px-5 text-[#526152] hover:bg-[#f1f6ee]"
+              >
+                Switch wallet
+              </Button>
+            </div>
+
+            <div className="mt-8 grid gap-3 sm:grid-cols-4">
+              {[
+                ["Health context", "0"],
+                ["Connected apps", "0"],
+                ["Rewards", "0"],
+                ["Proofs", "0"],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[1.4rem] border border-[#e1e9df] bg-[#fbfdf9] p-5">
+                  <p className="text-4xl font-medium">{value}</p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.16em] text-[#7a867a]">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-[1.6rem] border border-[#dfe7dc] bg-[#101510] p-6 text-white">
+              <p className="text-lg font-medium">Next step: connect health sources</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">
+                In production, this wallet would choose Apple Health, Samsung Health, Google Fit, or Mi Fitness permissions before any dashboard data appears.
+              </p>
             </div>
           </div>
         </section>
