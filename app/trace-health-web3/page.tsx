@@ -1430,11 +1430,11 @@ export default function Web3HealthPage() {
             <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.9),rgba(218,255,205,0.44)_45%,rgba(255,255,255,0.72))]" />
             <div className="absolute left-1/2 top-1/2 size-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-trace-green/20 blur-3xl" />
 
-            <div className="relative grid min-h-[40rem] overflow-hidden rounded-[2.45rem] border border-white/70 bg-[#0d150f] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] lg:grid-cols-[1fr_25rem]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_28%,rgba(149,255,122,0.2),transparent_23rem),radial-gradient(circle_at_78%_72%,rgba(110,190,255,0.14),transparent_18rem)]" />
+            <div className="relative min-h-[40rem] overflow-hidden rounded-[2.45rem] border border-white/70 bg-[#0d150f] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_30%,rgba(149,255,122,0.2),transparent_24rem),radial-gradient(circle_at_75%_70%,rgba(110,190,255,0.12),transparent_20rem)]" />
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/36 to-transparent" />
 
-              <div className="relative flex flex-col justify-between p-7 sm:p-10 lg:p-12">
+              <div className="relative flex min-h-[40rem] max-w-5xl flex-col justify-between p-7 sm:p-10 lg:p-12">
                 <div className="flex items-center gap-3">
                   <div className="flex size-13 items-center justify-center rounded-2xl bg-white text-[#101510] shadow-[0_18px_50px_rgba(157,255,122,0.15)]">
                     <HeartPulse size={22} />
@@ -1446,7 +1446,7 @@ export default function Web3HealthPage() {
                 </div>
 
                 <div className="py-14">
-                  <h1 className="max-w-4xl text-[clamp(4rem,8.6vw,8.8rem)] font-medium leading-[0.83] tracking-normal">
+                  <h1 className="max-w-5xl text-[clamp(4rem,8.6vw,8.8rem)] font-medium leading-[0.83] tracking-normal">
                     Own your
                     <br />
                     health context.
@@ -1476,19 +1476,6 @@ export default function Web3HealthPage() {
                     </Button>
                   </div>
                   {walletError ? <p className="mt-5 max-w-2xl text-sm leading-6 text-rose-200">{walletError}</p> : null}
-                </div>
-              </div>
-
-              <div className="relative hidden border-l border-white/10 bg-white/[0.045] p-8 lg:flex lg:flex-col lg:justify-between">
-                <div className="ml-auto flex size-36 items-center justify-center rounded-full border border-trace-green/40 bg-trace-green/10 shadow-[0_0_80px_rgba(149,255,122,0.18)]">
-                  <div className="flex size-24 items-center justify-center rounded-full border border-white/18 bg-[#101510] text-trace-green">
-                    <ShieldCheck size={34} />
-                  </div>
-                </div>
-                <div className="rounded-[1.8rem] border border-white/12 bg-black/18 p-6">
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trace-green">Wallet-gated context</p>
-                  <p className="mt-4 text-2xl font-medium leading-tight">Only the registered wallet restores the saved health intelligence.</p>
-                  <p className="mt-4 text-sm leading-6 text-white/48">New wallets enter a clean account with zero synced sources.</p>
                 </div>
               </div>
             </div>
