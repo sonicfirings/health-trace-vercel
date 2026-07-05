@@ -700,6 +700,7 @@ function MobileTabScreen({
   openJournalCheckIn,
   rewardPoints,
   completedRewardMissions,
+  isDemoAccount,
 }: {
   activeTab: Exclude<HealthTab, "Home">;
   setActiveTab: (tab: HealthTab) => void;
@@ -726,17 +727,52 @@ function MobileTabScreen({
   openJournalCheckIn: (label: string) => void;
   rewardPoints: number;
   completedRewardMissions: string[];
+  isDemoAccount: boolean;
 }) {
+  const mobileGuardianTitle = isDemoAccount ? "High attention day." : "Guardian waiting for context.";
+  const mobileGuardianCopy = isDemoAccount
+    ? "ETH volatility is elevated, sleep is below baseline, and your screen streak crossed your stress threshold."
+    : "Connect health apps in Settings so the Guardian can start building a private baseline.";
+  const mobileGuardianStatus = isDemoAccount
+    ? guardianStatus
+    : [
+        { label: "0% confidence", detail: "No data", className: "border-white/10 bg-white/[0.06] text-white" },
+        { label: "No baseline", detail: "Fresh wallet", className: "border-white/10 bg-white/[0.06] text-white" },
+        { label: "Connect apps", detail: "Required", className: "border-white/10 bg-white/[0.06] text-white" },
+      ];
+  const mobileMarketStats = isDemoAccount
+    ? [
+        ["Volatility", "+18%"],
+        ["Screen load", "6h 14m"],
+        ["Body stress", "Moderate"],
+      ]
+    : [
+        ["Volatility", "+18%"],
+        ["Screen load", "--"],
+        ["Body stress", "--"],
+      ];
+  const mobileRecoveryStats = isDemoAccount
+    ? [
+        ["Sleep debt", "1h 48m"],
+        ["Deep sleep", "Stable"],
+        ["Wind-down", "Due"],
+      ]
+    : [
+        ["Sleep debt", "--"],
+        ["Deep sleep", "--"],
+        ["Wind-down", "--"],
+      ];
+  const mobileBadges = isDemoAccount ? healthBadges : healthBadges.map((badge) => ({ ...badge, status: "NOT READY" }));
+
   if (activeTab === "Guardian") {
     return (
       <div className="space-y-4">
-        <MobileShell eyebrow="Guardian" title="High attention day." dark>
+        <MobileShell eyebrow="Guardian" title={mobileGuardianTitle} dark>
           <p className="text-sm leading-6 text-white/62">
-            ETH volatility is elevated, sleep is below baseline, and your screen streak crossed
-            your stress threshold.
+            {mobileGuardianCopy}
           </p>
           <div className="mt-5 grid grid-cols-3 gap-2">
-            {guardianStatus.map((item) => (
+            {mobileGuardianStatus.map((item) => (
               <div key={item.label} className={`rounded-[1.15rem] border p-3 text-center ${item.className}`}>
                 <p className="text-xs font-semibold leading-tight">{item.label}</p>
                 <p className="mt-1 text-[0.58rem] leading-tight opacity-70">{item.detail}</p>
@@ -799,16 +835,12 @@ function MobileTabScreen({
             <div className="mt-6 grid grid-cols-[8.2rem_1fr] items-center gap-4">
               <div className="flex size-32 items-center justify-center rounded-full bg-[conic-gradient(#fbbf24_0deg,#9DFF7A_224deg,rgba(255,255,255,0.12)_224deg)] p-1.5 shadow-[0_0_70px_rgba(251,191,36,0.16)]">
                 <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510] ring-1 ring-white/10">
-                  <p className="text-5xl font-medium leading-none">62</p>
-                  <p className="mt-1 text-[0.62rem] uppercase tracking-[0.16em] text-amber-200">Elevated</p>
+                  <p className="text-5xl font-medium leading-none">{isDemoAccount ? "62" : "--"}</p>
+                  <p className="mt-1 text-[0.62rem] uppercase tracking-[0.16em] text-amber-200">{isDemoAccount ? "Elevated" : "No data"}</p>
                 </div>
               </div>
               <div className="space-y-2">
-                {[
-                  ["Volatility", "+18%"],
-                  ["Screen load", "6h 14m"],
-                  ["Body stress", "Moderate"],
-                ].map(([label, value]) => (
+                {mobileMarketStats.map(([label, value]) => (
                   <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2">
                     <p className="text-lg font-medium leading-none">{value}</p>
                     <p className="mt-1 text-[0.62rem] text-white/42">{label}</p>
@@ -819,7 +851,9 @@ function MobileTabScreen({
             <div className="mt-5 rounded-[1.35rem] border border-white/10 bg-white/[0.065] p-4">
               <p className="text-sm font-medium text-white">Guardian readout</p>
               <p className="mt-2 text-xs leading-5 text-white/56">
-                Market movement is not dangerous by itself. The risk appears when volatility, screen time, and sleep debt stack together.
+                {isDemoAccount
+                  ? "Market movement is not dangerous by itself. The risk appears when volatility, screen time, and sleep debt stack together."
+                  : "BTC volatility is visible, but personal stress signals need connected health sources."}
               </p>
             </div>
           </div>
@@ -881,25 +915,23 @@ function MobileTabScreen({
             <div className="mt-4 flex items-end justify-between gap-5">
               <div>
                 <h2 className="text-[2.45rem] font-medium leading-[0.92] tracking-normal">
-                  Recovery is still protected.
+                  {isDemoAccount ? "Recovery is still protected." : "Recovery needs a baseline."}
                 </h2>
                 <p className="mt-4 text-sm leading-6 text-white/62">
-                  You have mild sleep debt, but HRV and morning movement are keeping your buffer intact.
+                  {isDemoAccount
+                    ? "You have mild sleep debt, but HRV and morning movement are keeping your buffer intact."
+                    : "Connect sleep and activity data so Trace can personalize recovery guidance."}
                 </p>
               </div>
               <div className="flex size-24 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_302deg,rgba(255,255,255,0.12)_302deg)] p-1.5 shadow-[0_0_48px_rgba(157,255,122,0.18)]">
                 <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510]">
-                  <p className="text-3xl font-medium leading-none">84</p>
-                  <p className="mt-1 text-[0.6rem] text-trace-green">Ready</p>
+                  <p className="text-3xl font-medium leading-none">{isDemoAccount ? "84" : "--"}</p>
+                  <p className="mt-1 text-[0.6rem] text-trace-green">{isDemoAccount ? "Ready" : "No data"}</p>
                 </div>
               </div>
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2">
-              {[
-                ["Sleep debt", "1h 48m"],
-                ["Deep sleep", "Stable"],
-                ["Wind-down", "Due"],
-              ].map(([label, value]) => (
+              {mobileRecoveryStats.map(([label, value]) => (
                 <div key={label} className="rounded-[1.15rem] border border-white/10 bg-white/[0.06] p-3">
                   <p className="text-lg font-medium leading-none">{value}</p>
                   <p className="mt-2 text-[0.62rem] text-white/42">{label}</p>
@@ -1042,10 +1074,10 @@ function MobileTabScreen({
             <div>
               <p className="text-sm text-white/50">Health Trace Points</p>
               <p className="mt-1 text-5xl font-medium leading-none">{rewardPoints.toLocaleString()}</p>
-              <p className="mt-2 text-sm text-trace-green">Level 4 Guardian</p>
+              <p className="mt-2 text-sm text-trace-green">{isDemoAccount ? "Level 4 Guardian" : "Level 1 Guardian"}</p>
             </div>
             <div className="rounded-[1.15rem] border border-trace-green/20 bg-trace-green/10 px-3 py-2 text-center">
-              <p className="text-2xl font-medium">6</p>
+              <p className="text-2xl font-medium">{isDemoAccount ? "6" : "0"}</p>
               <p className="text-[0.62rem] uppercase tracking-[0.18em] text-white/46">Streak</p>
             </div>
           </div>
@@ -1090,7 +1122,7 @@ function MobileTabScreen({
           </div>
         </section>
         <div className="grid gap-3">
-          {healthBadges.map((badge) => (
+          {mobileBadges.map((badge) => (
             <MobilePillCard key={badge.label} label={badge.label} value={badge.status} detail={badge.detail} icon={ShieldCheck} />
           ))}
         </div>
@@ -1345,6 +1377,76 @@ export default function Web3HealthPage() {
   const guardianRecommendation = isDemoAccount
     ? "Do deep work before checking markets. Take an eye break now, and avoid major decisions after midnight."
     : "Connect a health source in Settings to start building your private baseline.";
+  const rewardStats = [
+    ["HT Points", rewardPoints.toLocaleString()],
+    ["Level", isDemoAccount ? "4" : "1"],
+    ["Streak", isDemoAccount ? "6 days" : "0 days"],
+    ["Badge status", isDemoAccount ? "Mint-ready" : "NOT READY"],
+  ];
+  const dashboardBadges = isDemoAccount
+    ? healthBadges
+    : healthBadges.map((badge) => ({ ...badge, status: "NOT READY" }));
+  const dashboardMarketDrivers = isDemoAccount
+    ? marketDrivers
+    : marketDrivers.map((driver) =>
+        driver.label === "BTC volatility"
+          ? driver
+          : {
+              ...driver,
+              value: "--",
+              note: "Connect health sources to calculate this signal",
+              chart: [0, 0, 0, 0, 0, 0, 0],
+            },
+      );
+  const dashboardRecoveryRows = isDemoAccount
+    ? recoveryRows
+    : [
+        ["Midnight activity", "--", "Connect sleep/activity data"],
+        ["Sleep debt", "--", "Connect a sleep source"],
+        ["Caffeine window", "--", "No journal baseline yet"],
+        ["Builder load", "--", "No activity context yet"],
+      ];
+  const guardianTitle = isDemoAccount ? "Today is a high-risk attention day." : "Your Guardian is waiting for context.";
+  const guardianCopy = isDemoAccount
+    ? "ETH volatility is elevated, your sleep was below baseline, and your current screen streak crossed your usual stress threshold. Health Trace recommends protecting deep work before markets and avoiding major decisions after midnight."
+    : "This wallet is brand new. Connect health apps in Settings so Health Trace can start building a private baseline before it gives risk guidance.";
+  const guardianPills = isDemoAccount
+    ? [
+        { label: "No medical urgency", detail: "No acute alert", className: "border-sky-200 bg-sky-50 text-sky-700" },
+        { label: "Attention watch", detail: "Protect decisions", className: "border-amber-200 bg-amber-50 text-amber-700" },
+        { label: "91% confidence", detail: "Strong signal match", className: "border-[#9DFF7A]/50 bg-[#ecffe6] text-[#2f7d3c]" },
+      ]
+    : [
+        { label: "No baseline", detail: "0 signals", className: "border-[#dce6d9] bg-white text-[#657365]" },
+        { label: "Connect sources", detail: "Required", className: "border-[#dce6d9] bg-white text-[#657365]" },
+        { label: "0% confidence", detail: "No data yet", className: "border-[#dce6d9] bg-white text-[#657365]" },
+      ];
+  const guardianEvidence = isDemoAccount
+    ? [
+        ["Market volatility", "BTC/ETH movement is 18% above your baseline watchlist."],
+        ["Sleep debt", "Three late nights created 1h 48m of accumulated sleep debt."],
+        ["Screen fatigue", "91 minutes of uninterrupted chart and Discord exposure."],
+        ["Decision risk", "Higher impulse risk appears when sleep drops and volatility rises."],
+      ]
+    : [
+        ["Market volatility", "BTC volatility can be shown before health sources are connected."],
+        ["Sleep debt", "No sleep source connected yet."],
+        ["Screen fatigue", "No screen or eye-break context yet."],
+        ["Decision risk", "Guardian needs health and journal signals first."],
+      ];
+  const guardianReadout = isDemoAccount
+    ? { value: "Watch", label: "Attention risk", chart: [42, 48, 56, 64, 72, 68, 62] }
+    : { value: "New", label: "No baseline", chart: [0, 0, 0, 0, 0, 0, 0] };
+  const marketStressScore = isDemoAccount ? "62" : "--";
+  const marketStressLabel = isDemoAccount ? "Elevated, manageable" : "Health context needed";
+  const marketStressCopy = isDemoAccount
+    ? "Trace reads volatility, screen intensity, sleep debt, and body stress as one context layer, then tells you when market behavior is starting to tax recovery."
+    : "BTC volatility can be visible immediately, but screen intensity, sleep debt, and body stress need connected health sources before Trace can personalize the readout.";
+  const recoveryScore = isDemoAccount ? "84" : "--";
+  const recoveryTitle = isDemoAccount ? "Recovery is still protected." : "Recovery needs a baseline.";
+  const recoveryCopy = isDemoAccount
+    ? "Sleep debt is present, but your morning movement and HRV trend are keeping the buffer intact. Tonight is about preventing a second-order drop."
+    : "This wallet has no sleep, activity, or wearable context yet. Connect a health source to let Trace build recovery intelligence.";
 
   useEffect(() => {
     const updateSyncedAt = () => {
@@ -1788,6 +1890,7 @@ export default function Web3HealthPage() {
                     openJournalCheckIn={openJournalCheckIn}
                     rewardPoints={rewardPoints}
                     completedRewardMissions={completedRewardMissions}
+                    isDemoAccount={isDemoAccount}
                   />
                 </div>
               ) : null}
@@ -2065,19 +2168,13 @@ export default function Web3HealthPage() {
                             AI Web3 Health Guardian
                           </p>
                           <h2 className="mt-4 text-[clamp(2.05rem,10vw,4.9rem)] font-medium leading-[0.95] tracking-normal text-[#101510] sm:text-[clamp(2.3rem,4vw,4.9rem)]">
-                            Today is a high-risk attention day.
+                            {guardianTitle}
                           </h2>
                           <p className="mt-4 max-w-4xl text-base leading-7 text-[#425042] sm:mt-5 sm:text-xl sm:leading-9">
-                            ETH volatility is elevated, your sleep was below baseline, and your current
-                            screen streak crossed your usual stress threshold. Health Trace recommends
-                            protecting deep work before markets and avoiding major decisions after midnight.
+                            {guardianCopy}
                           </p>
                           <div className="mt-5 flex flex-wrap gap-2 sm:mt-6 sm:gap-3">
-                            {[
-                              { label: "No medical urgency", detail: "No acute alert", className: "border-sky-200 bg-sky-50 text-sky-700" },
-                              { label: "Attention watch", detail: "Protect decisions", className: "border-amber-200 bg-amber-50 text-amber-700" },
-                              { label: "91% confidence", detail: "Strong signal match", className: "border-[#9DFF7A]/50 bg-[#ecffe6] text-[#2f7d3c]" },
-                            ].map((item) => (
+                            {guardianPills.map((item) => (
                               <span
                                 key={item.label}
                                 className={`rounded-full border px-3 py-2 text-xs font-medium sm:px-4 ${item.className}`}
@@ -2092,15 +2189,15 @@ export default function Web3HealthPage() {
                           <p className="text-sm text-white/46">Guardian readout</p>
                           <div className="mt-4 flex items-end justify-between">
                             <div>
-                              <p className="text-4xl font-medium">Watch</p>
-                              <p className="mt-1 text-sm text-trace-green">Attention risk</p>
+                              <p className="text-4xl font-medium">{guardianReadout.value}</p>
+                              <p className="mt-1 text-sm text-trace-green">{guardianReadout.label}</p>
                             </div>
                             <div className="flex size-12 items-center justify-center rounded-full border border-trace-green/24 bg-trace-green/10 text-trace-green">
                               <BrainCircuit size={19} />
                             </div>
                           </div>
                           <div className="mt-5 h-16">
-                            <MiniChart data={[42, 48, 56, 64, 72, 68, 62]} />
+                            <MiniChart data={guardianReadout.chart} />
                           </div>
                         </div>
                       </div>
@@ -2117,12 +2214,7 @@ export default function Web3HealthPage() {
                         >
                           <div className="grid gap-4 p-4 sm:gap-5 sm:p-7 xl:grid-cols-[1fr_0.7fr]">
                             <div className="grid gap-3 md:grid-cols-2 sm:gap-4">
-                              {[
-                                ["Market volatility", "BTC/ETH movement is 18% above your baseline watchlist."],
-                                ["Sleep debt", "Three late nights created 1h 48m of accumulated sleep debt."],
-                                ["Screen fatigue", "91 minutes of uninterrupted chart and Discord exposure."],
-                                ["Decision risk", "Higher impulse risk appears when sleep drops and volatility rises."],
-                              ].map(([title, detail]) => (
+                              {guardianEvidence.map(([title, detail]) => (
                                 <div key={title} className="rounded-[1.35rem] border border-[#e1e9df] bg-[#f8fbf6] p-4 sm:rounded-3xl sm:p-5">
                                   <p className="text-sm font-medium text-[#5d6b5d]">{title}</p>
                                   <p className="mt-2 text-base font-medium leading-6 text-[#172117] sm:text-lg sm:leading-7">{detail}</p>
@@ -2190,18 +2282,18 @@ export default function Web3HealthPage() {
                             Trade calm before trading fast.
                           </h2>
                           <p className="mt-6 max-w-xl text-base leading-8 text-white/62">
-                            Trace reads volatility, screen intensity, sleep debt, and body stress as one context layer, then tells you when market behavior is starting to tax recovery.
+                            {marketStressCopy}
                           </p>
 
                           <div className="mt-8 grid grid-cols-[13rem_1fr] items-center gap-8">
                             <div className="flex size-52 items-center justify-center rounded-full bg-[conic-gradient(#fbbf24_0deg,#9DFF7A_224deg,rgba(255,255,255,0.1)_224deg)] p-2 shadow-[0_0_90px_rgba(251,191,36,0.18)]">
                               <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510] ring-1 ring-white/10">
-                                <p className="text-7xl font-medium leading-none">62</p>
-                                <p className="mt-2 text-sm font-medium text-amber-200">Elevated, manageable</p>
+                                <p className="text-7xl font-medium leading-none">{marketStressScore}</p>
+                                <p className="mt-2 text-sm font-medium text-amber-200">{marketStressLabel}</p>
                               </div>
                             </div>
                             <div className="space-y-3">
-                              {marketDrivers.map((driver) => (
+                              {dashboardMarketDrivers.map((driver) => (
                                 <div key={driver.label} className="rounded-[1.25rem] border border-white/10 bg-white/[0.055] p-4">
                                   <div className="flex items-center justify-between gap-4">
                                     <div>
@@ -2304,25 +2396,32 @@ export default function Web3HealthPage() {
                             Night Watch Recovery
                           </p>
                           <h2 className="mt-5 text-[clamp(2.65rem,4.4vw,5.8rem)] font-medium leading-[0.88] tracking-normal">
-                            Recovery is still protected.
+                            {recoveryTitle}
                           </h2>
                           <p className="mt-5 max-w-xl text-base leading-8 text-white/62">
-                            Sleep debt is present, but your morning movement and HRV trend are keeping
-                            the buffer intact. Tonight is about preventing a second-order drop.
+                            {recoveryCopy}
                           </p>
 
                           <div className="mt-8 grid grid-cols-[12rem_1fr] items-center gap-8">
                             <div className="flex size-48 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_302deg,rgba(255,255,255,0.1)_302deg)] p-2 shadow-[0_0_80px_rgba(157,255,122,0.2)]">
                               <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510] ring-1 ring-white/10">
-                                <p className="text-6xl font-medium leading-none">84</p>
+                                <p className="text-6xl font-medium leading-none">{recoveryScore}</p>
                                 <p className="mt-2 text-sm text-trace-green">Recovery readiness</p>
                               </div>
                             </div>
                             <div className="space-y-3">
                               {[
-                                ["Sleep debt", "1h 48m", "Mild accumulated fatigue"],
-                                ["Deep sleep", "Stable", "No sharp overnight drop"],
-                                ["Decision load", "Watch", "Markets can still tax recovery"],
+                                ...(isDemoAccount
+                                  ? [
+                                      ["Sleep debt", "1h 48m", "Mild accumulated fatigue"],
+                                      ["Deep sleep", "Stable", "No sharp overnight drop"],
+                                      ["Decision load", "Watch", "Markets can still tax recovery"],
+                                    ]
+                                  : [
+                                      ["Sleep debt", "--", "Connect a sleep source"],
+                                      ["Deep sleep", "--", "No recovery baseline yet"],
+                                      ["Decision load", "--", "Connect journal and screen signals"],
+                                    ]),
                               ].map(([label, value, detail]) => (
                                 <div key={label} className="rounded-[1.25rem] border border-white/10 bg-white/[0.055] p-4">
                                   <div className="flex items-center justify-between gap-3">
@@ -2354,24 +2453,47 @@ export default function Web3HealthPage() {
 
                         <div className="mt-6 grid gap-3">
                           {[
-                            [
-                              "3:00 PM",
-                              "Caffeine boundary",
-                              "Late caffeine is one of the easiest ways to turn mild sleep debt into delayed sleep onset. Trace is watching whether your resting heart rate settles earlier tonight.",
-                              "Signal watched: sleep latency + resting HR",
-                            ],
-                            [
-                              "10:00 PM",
-                              "Screen dimming window",
-                              "Charts, X, and Discord keep your attention system elevated even after you close them. Dim screens, reduce motion, and move to low-stimulation input.",
-                              "Signal watched: screen streak + stress drift",
-                            ],
-                            [
-                              "11:30 PM",
-                              "Market hard stop",
-                              "Your recovery drops most when late volatility checks follow a high-load day. Stop active decisions before midnight to protect tomorrow's readiness.",
-                              "Signal watched: midnight activity + sleep debt",
-                            ],
+                            ...(isDemoAccount
+                              ? [
+                                  [
+                                    "3:00 PM",
+                                    "Caffeine boundary",
+                                    "Late caffeine is one of the easiest ways to turn mild sleep debt into delayed sleep onset. Trace is watching whether your resting heart rate settles earlier tonight.",
+                                    "Signal watched: sleep latency + resting HR",
+                                  ],
+                                  [
+                                    "10:00 PM",
+                                    "Screen dimming window",
+                                    "Charts, X, and Discord keep your attention system elevated even after you close them. Dim screens, reduce motion, and move to low-stimulation input.",
+                                    "Signal watched: screen streak + stress drift",
+                                  ],
+                                  [
+                                    "11:30 PM",
+                                    "Market hard stop",
+                                    "Your recovery drops most when late volatility checks follow a high-load day. Stop active decisions before midnight to protect tomorrow's readiness.",
+                                    "Signal watched: midnight activity + sleep debt",
+                                  ],
+                                ]
+                              : [
+                                  [
+                                    "Now",
+                                    "Connect sleep source",
+                                    "Recovery protocols need sleep duration, timing, and consistency before Health Trace can make personal recommendations.",
+                                    "Signal needed: sleep duration + timing",
+                                  ],
+                                  [
+                                    "Next",
+                                    "Connect activity source",
+                                    "Movement and recovery context will stay blank until a wearable or health app is connected.",
+                                    "Signal needed: steps + workouts",
+                                  ],
+                                  [
+                                    "Then",
+                                    "Create first check-in",
+                                    "Journal context helps the Guardian separate market stress from actual recovery issues.",
+                                    "Signal needed: FOMO / FUD check-in",
+                                  ],
+                                ]),
                           ].map(([time, title, detail, signal], index) => (
                             <motion.article
                               key={title}
@@ -2392,10 +2514,16 @@ export default function Web3HealthPage() {
                         </div>
 
                         <div className="mt-5 grid grid-cols-2 gap-3">
-                          {[
-                            ["Recovery forecast", "Better if asleep before midnight"],
-                            ["Guardian note", "No urgency. Protect the buffer."],
-                          ].map(([title, detail]) => (
+                        {(isDemoAccount
+                          ? [
+                              ["Recovery forecast", "Better if asleep before midnight"],
+                              ["Guardian note", "No urgency. Protect the buffer."],
+                            ]
+                          : [
+                              ["Recovery forecast", "Waiting for health sources"],
+                              ["Guardian note", "Connect data before personal guidance."],
+                            ]
+                        ).map(([title, detail]) => (
                             <div key={title} className="rounded-[1.35rem] border border-[#dfe7dc] bg-[#f8fbf6] p-5">
                               <p className="text-sm font-medium text-[#172117]">{title}</p>
                               <p className="mt-2 text-sm leading-5 text-[#687668]">{detail}</p>
@@ -2611,12 +2739,7 @@ export default function Web3HealthPage() {
                         Rewards for recovery, not speculation.
                       </h2>
                       <div className="mt-7 grid grid-cols-2 gap-3">
-                        {[
-                          ["HT Points", rewardPoints.toLocaleString()],
-                          ["Level", "4"],
-                          ["Streak", "6 days"],
-                          ["Badge status", "Mint-ready"],
-                        ].map(([label, value], index) => (
+                        {rewardStats.map(([label, value], index) => (
                           <div
                             key={label}
                             className="relative overflow-hidden rounded-[1.3rem] border border-trace-green/20 bg-[radial-gradient(circle_at_20%_10%,rgba(157,255,122,0.18),transparent_36%),rgba(255,255,255,0.055)] p-4 ring-1 ring-white/5"
@@ -2672,7 +2795,7 @@ export default function Web3HealthPage() {
                       </div>
 
                       <div className="grid gap-3 md:grid-cols-3">
-                        {healthBadges.map((badge) => (
+                        {dashboardBadges.map((badge) => (
                           <div key={badge.label} className="rounded-[1.35rem] border border-[#e1e9df] bg-[#f8fbf6] p-5">
                             <ShieldCheck className="size-5 text-[#2f7d3c]" />
                             <p className="mt-4 whitespace-nowrap text-base font-medium text-[#172117]">{badge.label}</p>
