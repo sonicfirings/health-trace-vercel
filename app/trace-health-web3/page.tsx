@@ -82,6 +82,10 @@ const walletProfileStoragePrefix = "health-trace-web3-profile:";
 type WalletProfile = {
   displayName: string;
   lastTaskResetDate: string;
+  lastWeeklyResetKey: string;
+  weeklyEyeBreaks: number;
+  weeklyStressChecks: number;
+  weeklySleepBoundaries: number;
   eyeBreakCount: number;
   isEyeResetOnCooldown: boolean;
   eyeResetCooldownSeconds: number;
@@ -99,6 +103,21 @@ type WalletProfile = {
 
 const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
 const getGmt8DateKey = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const getGmt8WeekStart = () => {
+  const gmt8Now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const day = gmt8Now.getUTCDay();
+  const mondayOffset = day === 0 ? 6 : day - 1;
+  const monday = new Date(Date.UTC(gmt8Now.getUTCFullYear(), gmt8Now.getUTCMonth(), gmt8Now.getUTCDate() - mondayOffset));
+  return monday;
+};
+const getGmt8WeekKey = () => getGmt8WeekStart().toISOString().slice(0, 10);
+const formatGmt8WeekRange = () => {
+  const formatter = new Intl.DateTimeFormat("en", { day: "numeric", month: "long", timeZone: "UTC" });
+  const start = getGmt8WeekStart();
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  return `${formatter.format(start)} - ${formatter.format(end)}`;
+};
 
 type ProofAction = {
   label: string;
@@ -728,6 +747,7 @@ function MobileTabScreen({
   isDemoAccount,
   proofActions,
   proofStreakLabel,
+  weeklyRangeLabel,
   weeklyReportStats,
   weeklyReportSummary,
   syncProofAction,
@@ -760,6 +780,7 @@ function MobileTabScreen({
   isDemoAccount: boolean;
   proofActions: ProofAction[];
   proofStreakLabel: string;
+  weeklyRangeLabel: string;
   weeklyReportStats: string[][];
   weeklyReportSummary: string;
   syncProofAction: (proof: ProofAction) => void;
@@ -1223,6 +1244,7 @@ function MobileTabScreen({
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#607260]">Weekly report</p>
               <h3 className="mt-2 text-2xl font-medium leading-tight text-[#172117]">{weeklyReport.title}</h3>
+              <p className="mt-1 text-xs text-[#687668]">{weeklyRangeLabel}</p>
             </div>
             <FileText className="size-6 text-[#2f7d3c]" />
           </div>
@@ -1391,6 +1413,9 @@ export default function Web3HealthPage() {
   const [completedRewardMissions, setCompletedRewardMissions] = useState<string[]>([]);
   const [completedProofActions, setCompletedProofActions] = useState<string[]>([]);
   const [syncingProofAction, setSyncingProofAction] = useState("");
+  const [weeklyEyeBreaks, setWeeklyEyeBreaks] = useState(0);
+  const [weeklyStressChecks, setWeeklyStressChecks] = useState(0);
+  const [weeklySleepBoundaries, setWeeklySleepBoundaries] = useState(0);
   const [rewardPoints, setRewardPoints] = useState(0);
   const [selectedHealthApp, setSelectedHealthApp] = useState(healthApps[0].label);
   const [connectedHealthApps, setConnectedHealthApps] = useState<string[]>([]);
@@ -1528,11 +1553,15 @@ export default function Web3HealthPage() {
     window.localStorage.setItem(walletStorageKey, walletAddress);
     const normalizedWallet = walletAddress.toLowerCase();
     const todayKey = getGmt8DateKey();
+    const weekKey = getGmt8WeekKey();
 
     if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
       setDisplayName("Mervyn");
       setPendingDisplayName("Mervyn");
       setEyeBreakCount(2);
+      setWeeklyEyeBreaks(18);
+      setWeeklyStressChecks(9);
+      setWeeklySleepBoundaries(4);
       setRewardPoints(1280);
       setConnectedHealthApps(demoConnectedHealthApps);
       setHealthPermissions(demoHealthPermissions);
@@ -1546,9 +1575,13 @@ export default function Web3HealthPage() {
       try {
         const profile = JSON.parse(storedProfile) as Partial<WalletProfile>;
         const shouldResetDailyTasks = profile.lastTaskResetDate !== todayKey;
+        const shouldResetWeeklyCounters = profile.lastWeeklyResetKey !== weekKey;
         setDisplayName(profile.displayName ?? "");
         setPendingDisplayName(profile.displayName ?? "");
         setEyeBreakCount(shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0);
+        setWeeklyEyeBreaks(shouldResetWeeklyCounters ? 0 : profile.weeklyEyeBreaks ?? 0);
+        setWeeklyStressChecks(shouldResetWeeklyCounters ? 0 : profile.weeklyStressChecks ?? 0);
+        setWeeklySleepBoundaries(shouldResetWeeklyCounters ? 0 : profile.weeklySleepBoundaries ?? 0);
         setRewardPoints(profile.rewardPoints ?? 0);
         setConnectedHealthApps(profile.connectedHealthApps ?? []);
         setHealthPermissions(profile.healthPermissions ?? emptyHealthPermissions);
@@ -1571,6 +1604,9 @@ export default function Web3HealthPage() {
     setDisplayName("");
     setPendingDisplayName("");
     setEyeBreakCount(0);
+    setWeeklyEyeBreaks(0);
+    setWeeklyStressChecks(0);
+    setWeeklySleepBoundaries(0);
     setRewardPoints(0);
     setConnectedHealthApps([]);
     setHealthPermissions(emptyHealthPermissions);
@@ -1594,6 +1630,10 @@ export default function Web3HealthPage() {
     const profile: WalletProfile = {
       displayName,
       lastTaskResetDate: getGmt8DateKey(),
+      lastWeeklyResetKey: getGmt8WeekKey(),
+      weeklyEyeBreaks,
+      weeklyStressChecks,
+      weeklySleepBoundaries,
       eyeBreakCount,
       isEyeResetOnCooldown,
       eyeResetCooldownSeconds,
@@ -1627,6 +1667,9 @@ export default function Web3HealthPage() {
     rewardPoints,
     selectedHealthApp,
     walletAddress,
+    weeklyEyeBreaks,
+    weeklySleepBoundaries,
+    weeklyStressChecks,
   ]);
 
   const eyeBreakMetrics = eyeBreaks.map((item) =>
@@ -1647,18 +1690,19 @@ export default function Web3HealthPage() {
   const fomoReflectionDone = Boolean(journalSelections.FOMO || journalSelections.FUD || journalSelections["Revenge trade urge"]);
   const completedProofCount =
     completedProofActions.length +
-    (eyeBreakCount > 0 ? 1 : 0) +
+    (eyeBreakCount >= 6 ? 1 : 0) +
     (fomoReflectionDone ? 1 : 0) +
     completedMarketActions.length;
   const proofStreakLabel = isDemoAccount ? "6 days" : completedProofCount > 0 ? "1 day" : "0 days";
+  const weeklyRangeLabel = formatGmt8WeekRange();
   const proofActions: ProofAction[] = [
     {
-      label: "Eye break completed",
-      status: eyeBreakCount > 0 ? `${eyeBreakCount} completed` : "0 completed",
+      label: "Eye break",
+      status: `${eyeBreakCount}/6 completed`,
       icon: Activity,
       actionLabel: "View eye break data",
       sourceTab: "Eye Break",
-      completed: eyeBreakCount > 0,
+      completed: eyeBreakCount >= 6,
     },
     {
       label: "Recovery walk",
@@ -1703,9 +1747,9 @@ export default function Web3HealthPage() {
   ];
   const weeklyReportStats = [
     ["Proof streak", proofStreakLabel],
-    ["Eye breaks", String(eyeBreakCount)],
-    ["Stress checks", String(completedMarketActions.length)],
-    ["Sleep boundary", completedProofActions.includes("Sleep boundary") ? "1 night" : "0 nights"],
+    ["Eye breaks", String(weeklyEyeBreaks)],
+    ["Stress checks", String(weeklyStressChecks)],
+    ["Sleep boundary", `${weeklySleepBoundaries} night${weeklySleepBoundaries === 1 ? "" : "s"}`],
   ];
   const weeklyReportSummary = isDemoAccount
     ? weeklyReport.summary
@@ -1714,7 +1758,11 @@ export default function Web3HealthPage() {
       : "No healthy actions have been proved yet. Complete an eye break, journal check-in, or synced health action to start.";
 
   const completeEyeReset = () => {
-    setEyeBreakCount((current) => Math.min(6, current + 1));
+    setEyeBreakCount((current) => {
+      if (current >= 6) return current;
+      setWeeklyEyeBreaks((weekly) => weekly + 1);
+      return current + 1;
+    });
     setIsEyeResetOnCooldown(true);
     setEyeResetCooldownSeconds(20 * 60);
     setPostureResetDone(true);
@@ -1759,6 +1807,7 @@ export default function Web3HealthPage() {
         completeRewardMission("Take a recovery walk", 60);
       }
       if (proof.label === "Sleep boundary") {
+        setWeeklySleepBoundaries((current) => current + 1);
         completeRewardMission("Keep midnight boundary", 90);
       }
       if (proof.label === "Hydration check") {
@@ -1775,9 +1824,11 @@ export default function Web3HealthPage() {
   };
 
   const toggleMarketAction = (action: string) => {
-    setCompletedMarketActions((current) =>
-      current.includes(action) ? current.filter((item) => item !== action) : [...current, action],
-    );
+    setCompletedMarketActions((current) => {
+      if (current.includes(action)) return current.filter((item) => item !== action);
+      setWeeklyStressChecks((weekly) => weekly + 1);
+      return [...current, action];
+    });
   };
 
   const openJournalCheckIn = (label: string) => {
@@ -2181,6 +2232,7 @@ export default function Web3HealthPage() {
                     isDemoAccount={isDemoAccount}
                     proofActions={proofActions}
                     proofStreakLabel={proofStreakLabel}
+                    weeklyRangeLabel={weeklyRangeLabel}
                     weeklyReportStats={weeklyReportStats}
                     weeklyReportSummary={weeklyReportSummary}
                     syncProofAction={syncProofAction}
@@ -2967,6 +3019,7 @@ export default function Web3HealthPage() {
                               Weekly report poster
                             </p>
                             <h3 className="mt-4 text-4xl font-medium leading-none">{weeklyReport.title}</h3>
+                            <p className="mt-3 text-sm text-white/46">{weeklyRangeLabel}</p>
                           </div>
                           <FileText className="size-7 text-trace-green" />
                         </div>
