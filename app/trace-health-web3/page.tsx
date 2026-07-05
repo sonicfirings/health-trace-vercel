@@ -81,6 +81,7 @@ const walletProfileStoragePrefix = "health-trace-web3-profile:";
 
 type WalletProfile = {
   displayName: string;
+  lastTaskResetDate: string;
   eyeBreakCount: number;
   isEyeResetOnCooldown: boolean;
   eyeResetCooldownSeconds: number;
@@ -97,6 +98,7 @@ type WalletProfile = {
 };
 
 const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
+const getGmt8DateKey = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
 type ProofAction = {
   label: string;
@@ -1525,6 +1527,7 @@ export default function Web3HealthPage() {
 
     window.localStorage.setItem(walletStorageKey, walletAddress);
     const normalizedWallet = walletAddress.toLowerCase();
+    const todayKey = getGmt8DateKey();
 
     if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
       setDisplayName("Mervyn");
@@ -1542,20 +1545,21 @@ export default function Web3HealthPage() {
     if (storedProfile) {
       try {
         const profile = JSON.parse(storedProfile) as Partial<WalletProfile>;
+        const shouldResetDailyTasks = profile.lastTaskResetDate !== todayKey;
         setDisplayName(profile.displayName ?? "");
         setPendingDisplayName(profile.displayName ?? "");
-        setEyeBreakCount(profile.eyeBreakCount ?? 0);
+        setEyeBreakCount(shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0);
         setRewardPoints(profile.rewardPoints ?? 0);
         setConnectedHealthApps(profile.connectedHealthApps ?? []);
         setHealthPermissions(profile.healthPermissions ?? emptyHealthPermissions);
-        setCompletedRewardMissions(profile.completedRewardMissions ?? []);
-        setCompletedProofActions(profile.completedProofActions ?? []);
-        setCompletedGuardianActions(profile.completedGuardianActions ?? []);
-        setCompletedMarketActions(profile.completedMarketActions ?? []);
-        setJournalSelections(profile.journalSelections ?? {});
-        setPostureResetDone(profile.postureResetDone ?? false);
-        setIsEyeResetOnCooldown(profile.isEyeResetOnCooldown ?? false);
-        setEyeResetCooldownSeconds(profile.eyeResetCooldownSeconds ?? 0);
+        setCompletedRewardMissions(shouldResetDailyTasks ? [] : profile.completedRewardMissions ?? []);
+        setCompletedProofActions(shouldResetDailyTasks ? [] : profile.completedProofActions ?? []);
+        setCompletedGuardianActions(shouldResetDailyTasks ? [] : profile.completedGuardianActions ?? []);
+        setCompletedMarketActions(shouldResetDailyTasks ? [] : profile.completedMarketActions ?? []);
+        setJournalSelections(shouldResetDailyTasks ? {} : profile.journalSelections ?? {});
+        setPostureResetDone(shouldResetDailyTasks ? false : profile.postureResetDone ?? false);
+        setIsEyeResetOnCooldown(shouldResetDailyTasks ? false : profile.isEyeResetOnCooldown ?? false);
+        setEyeResetCooldownSeconds(shouldResetDailyTasks ? 0 : profile.eyeResetCooldownSeconds ?? 0);
         setSelectedHealthApp(profile.selectedHealthApp ?? healthApps[0].label);
         hydratedWalletRef.current = normalizedWallet;
         return;
@@ -1589,6 +1593,7 @@ export default function Web3HealthPage() {
 
     const profile: WalletProfile = {
       displayName,
+      lastTaskResetDate: getGmt8DateKey(),
       eyeBreakCount,
       isEyeResetOnCooldown,
       eyeResetCooldownSeconds,
@@ -1645,7 +1650,7 @@ export default function Web3HealthPage() {
     (eyeBreakCount > 0 ? 1 : 0) +
     (fomoReflectionDone ? 1 : 0) +
     completedMarketActions.length;
-  const proofStreakLabel = isDemoAccount ? "6 days" : `${Math.min(completedProofCount, 6)} days`;
+  const proofStreakLabel = isDemoAccount ? "6 days" : completedProofCount > 0 ? "1 day" : "0 days";
   const proofActions: ProofAction[] = [
     {
       label: "Eye break completed",
