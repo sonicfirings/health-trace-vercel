@@ -77,6 +77,36 @@ const navigation: { label: HealthTab; icon: typeof LayoutDashboard }[] = [
 const healthTabs = navigation.map((item) => item.label);
 const savedContextWalletAddress = "0xEf6fdfe87081da6acC6E4755d095b8C23568577F";
 const walletStorageKey = "health-trace-web3-wallet";
+const walletProfileStoragePrefix = "health-trace-web3-profile:";
+
+type WalletProfile = {
+  displayName: string;
+  eyeBreakCount: number;
+  isEyeResetOnCooldown: boolean;
+  eyeResetCooldownSeconds: number;
+  postureResetDone: boolean;
+  completedGuardianActions: string[];
+  completedMarketActions: string[];
+  journalSelections: Record<string, string>;
+  completedRewardMissions: string[];
+  completedProofActions: string[];
+  rewardPoints: number;
+  selectedHealthApp: string;
+  connectedHealthApps: string[];
+  healthPermissions: Record<string, string[]>;
+};
+
+const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
+
+type ProofAction = {
+  label: string;
+  status: string;
+  icon: typeof Activity;
+  actionLabel: string;
+  sourceTab?: HealthTab;
+  syncable?: boolean;
+  completed: boolean;
+};
 
 const demoConnectedHealthApps = ["Apple Health", "Samsung Health", "Google Fit"];
 const emptyHealthPermissions: Record<string, string[]> = {
@@ -374,14 +404,7 @@ const journalResponseCopy: Record<string, Record<string, { detail: string; actio
   },
 };
 
-const proofActions = [
-  { label: "Eye break completed", status: "Ready to prove", icon: Activity },
-  { label: "Recovery walk", status: "Verified locally", icon: Dumbbell },
-  { label: "FOMO reflection", status: "Private proof", icon: MessageCircle },
-  { label: "Sleep boundary", status: "Tonight", icon: Moon },
-  { label: "Hydration check", status: "Pending", icon: Droplets },
-  { label: "Builder balance", status: "6-day streak", icon: ShieldCheck },
-];
+const syncableProofLabels = ["Recovery walk", "Sleep boundary", "Hydration check"];
 
 const rewardMissions = [
   { label: "Complete 20-20-20 eye break", reward: "+30 HT Points", status: "Ready", icon: Activity },
@@ -701,6 +724,11 @@ function MobileTabScreen({
   rewardPoints,
   completedRewardMissions,
   isDemoAccount,
+  proofActions,
+  proofStreakLabel,
+  weeklyReportStats,
+  weeklyReportSummary,
+  syncProofAction,
 }: {
   activeTab: Exclude<HealthTab, "Home">;
   setActiveTab: (tab: HealthTab) => void;
@@ -728,6 +756,11 @@ function MobileTabScreen({
   rewardPoints: number;
   completedRewardMissions: string[];
   isDemoAccount: boolean;
+  proofActions: ProofAction[];
+  proofStreakLabel: string;
+  weeklyReportStats: string[][];
+  weeklyReportSummary: string;
+  syncProofAction: (proof: ProofAction) => void;
 }) {
   const mobileGuardianTitle = isDemoAccount ? "High attention day." : "Guardian waiting for context.";
   const mobileGuardianCopy = isDemoAccount
@@ -1179,7 +1212,7 @@ function MobileTabScreen({
         <MobileShell eyebrow="Proofs" title="Prove actions, not health data." dark>
           <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.06] p-4">
             <p className="text-xs text-white/42">Current streak</p>
-            <p className="mt-1 text-4xl font-medium">6 days</p>
+            <p className="mt-1 text-4xl font-medium">{proofStreakLabel}</p>
             <p className="mt-2 text-sm text-trace-green">Builder Balance Badge pending</p>
           </div>
         </MobileShell>
@@ -1191,9 +1224,9 @@ function MobileTabScreen({
             </div>
             <FileText className="size-6 text-[#2f7d3c]" />
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#687668]">{weeklyReport.summary}</p>
+          <p className="mt-3 text-sm leading-6 text-[#687668]">{weeklyReportSummary}</p>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            {weeklyReport.stats.map(([label, value]) => (
+            {weeklyReportStats.map(([label, value]) => (
               <div key={label} className="rounded-[1.1rem] bg-[#f8fbf6] p-3">
                 <p className="text-lg font-medium text-[#172117]">{value}</p>
                 <p className="mt-1 text-[0.68rem] text-[#687668]">{label}</p>
@@ -1208,13 +1241,18 @@ function MobileTabScreen({
               <button
                 key={proof.label}
                 type="button"
-                className="rounded-[1.35rem] border border-[#e1e9df] bg-white/86 p-3 text-left shadow-[0_14px_40px_rgba(16,21,16,0.045)]"
+                onClick={() => syncProofAction(proof)}
+                disabled={proof.completed && proof.syncable}
+                className={`rounded-[1.35rem] border p-3 text-left shadow-[0_14px_40px_rgba(16,21,16,0.045)] ${
+                  proof.completed ? "border-[#cfe0cb] bg-[#effbe9]" : "border-[#e1e9df] bg-white/86"
+                }`}
               >
                 <div className="flex size-9 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#3a8f4d]">
-                  <Icon size={16} />
+                  {proof.completed ? <Check size={16} strokeWidth={3} /> : <Icon size={16} />}
                 </div>
                 <p className="mt-4 text-sm font-medium leading-5 text-[#172117]">{proof.label}</p>
                 <p className="mt-2 text-[0.68rem] text-[#6d786d]">{proof.status}</p>
+                <p className="mt-3 text-[0.68rem] font-semibold text-[#2f7d3c]">{proof.actionLabel}</p>
               </button>
             );
           })}
@@ -1330,6 +1368,7 @@ function MobileTabScreen({
 }
 
 export default function Web3HealthPage() {
+  const hydratedWalletRef = useRef("");
   const [activeTab, setActiveTab] = useState<HealthTab>("Home");
   const [syncedAt, setSyncedAt] = useState("");
   const [guardianOpen, setGuardianOpen] = useState(true);
@@ -1337,6 +1376,8 @@ export default function Web3HealthPage() {
   const [walletAddress, setWalletAddress] = useState("");
   const [walletError, setWalletError] = useState("");
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [pendingDisplayName, setPendingDisplayName] = useState("");
   const [eyeBreakCount, setEyeBreakCount] = useState(0);
   const [isEyeResetOnCooldown, setIsEyeResetOnCooldown] = useState(false);
   const [eyeResetCooldownSeconds, setEyeResetCooldownSeconds] = useState(0);
@@ -1346,6 +1387,8 @@ export default function Web3HealthPage() {
   const [journalSelections, setJournalSelections] = useState<Record<string, string>>({});
   const [pendingJournalCheckIn, setPendingJournalCheckIn] = useState("");
   const [completedRewardMissions, setCompletedRewardMissions] = useState<string[]>([]);
+  const [completedProofActions, setCompletedProofActions] = useState<string[]>([]);
+  const [syncingProofAction, setSyncingProofAction] = useState("");
   const [rewardPoints, setRewardPoints] = useState(0);
   const [selectedHealthApp, setSelectedHealthApp] = useState(healthApps[0].label);
   const [connectedHealthApps, setConnectedHealthApps] = useState<string[]>([]);
@@ -1355,6 +1398,7 @@ export default function Web3HealthPage() {
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
   const isDemoAccount = walletAddress.toLowerCase() === savedContextWalletAddress.toLowerCase();
+  const profileName = displayName.trim() || "there";
   const dashboardTrend = isDemoAccount
     ? recoveryTrend
     : recoveryTrend.map((item) => ({ ...item, score: 0, sleep: 0, market: 0 }));
@@ -1474,32 +1518,111 @@ export default function Web3HealthPage() {
 
   useEffect(() => {
     if (!walletAddress) {
+      hydratedWalletRef.current = "";
       window.localStorage.removeItem(walletStorageKey);
       return;
     }
 
     window.localStorage.setItem(walletStorageKey, walletAddress);
+    const normalizedWallet = walletAddress.toLowerCase();
 
-    if (walletAddress.toLowerCase() === savedContextWalletAddress.toLowerCase()) {
+    if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
+      setDisplayName("Mervyn");
+      setPendingDisplayName("Mervyn");
       setEyeBreakCount(2);
       setRewardPoints(1280);
       setConnectedHealthApps(demoConnectedHealthApps);
       setHealthPermissions(demoHealthPermissions);
+      setCompletedProofActions(syncableProofLabels);
+      hydratedWalletRef.current = normalizedWallet;
       return;
     }
 
+    const storedProfile = window.localStorage.getItem(getWalletProfileKey(walletAddress));
+    if (storedProfile) {
+      try {
+        const profile = JSON.parse(storedProfile) as Partial<WalletProfile>;
+        setDisplayName(profile.displayName ?? "");
+        setPendingDisplayName(profile.displayName ?? "");
+        setEyeBreakCount(profile.eyeBreakCount ?? 0);
+        setRewardPoints(profile.rewardPoints ?? 0);
+        setConnectedHealthApps(profile.connectedHealthApps ?? []);
+        setHealthPermissions(profile.healthPermissions ?? emptyHealthPermissions);
+        setCompletedRewardMissions(profile.completedRewardMissions ?? []);
+        setCompletedProofActions(profile.completedProofActions ?? []);
+        setCompletedGuardianActions(profile.completedGuardianActions ?? []);
+        setCompletedMarketActions(profile.completedMarketActions ?? []);
+        setJournalSelections(profile.journalSelections ?? {});
+        setPostureResetDone(profile.postureResetDone ?? false);
+        setIsEyeResetOnCooldown(profile.isEyeResetOnCooldown ?? false);
+        setEyeResetCooldownSeconds(profile.eyeResetCooldownSeconds ?? 0);
+        setSelectedHealthApp(profile.selectedHealthApp ?? healthApps[0].label);
+        hydratedWalletRef.current = normalizedWallet;
+        return;
+      } catch {
+        window.localStorage.removeItem(getWalletProfileKey(walletAddress));
+      }
+    }
+
+    setDisplayName("");
+    setPendingDisplayName("");
     setEyeBreakCount(0);
     setRewardPoints(0);
     setConnectedHealthApps([]);
     setHealthPermissions(emptyHealthPermissions);
     setCompletedRewardMissions([]);
+    setCompletedProofActions([]);
     setCompletedGuardianActions([]);
     setCompletedMarketActions([]);
     setJournalSelections({});
     setPostureResetDone(false);
     setIsEyeResetOnCooldown(false);
     setEyeResetCooldownSeconds(0);
+    setSelectedHealthApp(healthApps[0].label);
+    hydratedWalletRef.current = normalizedWallet;
   }, [walletAddress]);
+
+  useEffect(() => {
+    if (!walletAddress || isDemoAccount || hydratedWalletRef.current !== walletAddress.toLowerCase()) {
+      return;
+    }
+
+    const profile: WalletProfile = {
+      displayName,
+      eyeBreakCount,
+      isEyeResetOnCooldown,
+      eyeResetCooldownSeconds,
+      postureResetDone,
+      completedGuardianActions,
+      completedMarketActions,
+      journalSelections,
+      completedRewardMissions,
+      completedProofActions,
+      rewardPoints,
+      selectedHealthApp,
+      connectedHealthApps,
+      healthPermissions,
+    };
+
+    window.localStorage.setItem(getWalletProfileKey(walletAddress), JSON.stringify(profile));
+  }, [
+    completedGuardianActions,
+    completedMarketActions,
+    completedProofActions,
+    completedRewardMissions,
+    connectedHealthApps,
+    displayName,
+    eyeBreakCount,
+    eyeResetCooldownSeconds,
+    healthPermissions,
+    isDemoAccount,
+    isEyeResetOnCooldown,
+    journalSelections,
+    postureResetDone,
+    rewardPoints,
+    selectedHealthApp,
+    walletAddress,
+  ]);
 
   const eyeBreakMetrics = eyeBreaks.map((item) =>
     item.label === "20-20-20 breaks"
@@ -1516,6 +1639,74 @@ export default function Web3HealthPage() {
           }
       : item,
   );
+  const fomoReflectionDone = Boolean(journalSelections.FOMO || journalSelections.FUD || journalSelections["Revenge trade urge"]);
+  const completedProofCount =
+    completedProofActions.length +
+    (eyeBreakCount > 0 ? 1 : 0) +
+    (fomoReflectionDone ? 1 : 0) +
+    completedMarketActions.length;
+  const proofStreakLabel = isDemoAccount ? "6 days" : `${Math.min(completedProofCount, 6)} days`;
+  const proofActions: ProofAction[] = [
+    {
+      label: "Eye break completed",
+      status: eyeBreakCount > 0 ? `${eyeBreakCount} completed` : "0 completed",
+      icon: Activity,
+      actionLabel: "View eye break data",
+      sourceTab: "Eye Break",
+      completed: eyeBreakCount > 0,
+    },
+    {
+      label: "Recovery walk",
+      status: completedProofActions.includes("Recovery walk") ? "Synced" : "Not synced",
+      icon: Dumbbell,
+      actionLabel: completedProofActions.includes("Recovery walk") ? "Synced" : "Sync to connected health apps",
+      syncable: true,
+      completed: completedProofActions.includes("Recovery walk"),
+    },
+    {
+      label: "FOMO reflection",
+      status: fomoReflectionDone ? "Check-in completed" : "No check-in yet",
+      icon: MessageCircle,
+      actionLabel: "View journal data",
+      sourceTab: "Journal",
+      completed: fomoReflectionDone,
+    },
+    {
+      label: "Sleep boundary",
+      status: completedProofActions.includes("Sleep boundary") ? "Synced" : "Not synced",
+      icon: Moon,
+      actionLabel: completedProofActions.includes("Sleep boundary") ? "Synced" : "Sync to connected health apps",
+      syncable: true,
+      completed: completedProofActions.includes("Sleep boundary"),
+    },
+    {
+      label: "Hydration check",
+      status: completedProofActions.includes("Hydration check") ? "Synced" : "Not synced",
+      icon: Droplets,
+      actionLabel: completedProofActions.includes("Hydration check") ? "Synced" : "Sync to connected health apps",
+      syncable: true,
+      completed: completedProofActions.includes("Hydration check"),
+    },
+    {
+      label: "Builder balance",
+      status: isDemoAccount || completedProofCount >= 3 ? "Ready" : "NOT READY",
+      icon: ShieldCheck,
+      actionLabel: "View rewards",
+      sourceTab: "Rewards",
+      completed: isDemoAccount || completedProofCount >= 3,
+    },
+  ];
+  const weeklyReportStats = [
+    ["Proof streak", proofStreakLabel],
+    ["Eye breaks", String(eyeBreakCount)],
+    ["Stress checks", String(completedMarketActions.length)],
+    ["Sleep boundary", completedProofActions.includes("Sleep boundary") ? "1 night" : "0 nights"],
+  ];
+  const weeklyReportSummary = isDemoAccount
+    ? weeklyReport.summary
+    : completedProofCount > 0
+      ? `You have completed ${completedProofCount} healthy proof action${completedProofCount === 1 ? "" : "s"} so far.`
+      : "No healthy actions have been proved yet. Complete an eye break, journal check-in, or synced health action to start.";
 
   const completeEyeReset = () => {
     setEyeBreakCount((current) => Math.min(6, current + 1));
@@ -1546,6 +1737,30 @@ export default function Web3HealthPage() {
       setRewardPoints((pointsCurrent) => pointsCurrent + points);
       return [...current, mission];
     });
+  };
+
+  const syncProofAction = (proof: ProofAction) => {
+    if (proof.sourceTab) {
+      setActiveTab(proof.sourceTab);
+      return;
+    }
+
+    if (!proof.syncable || proof.completed) return;
+
+    setSyncingProofAction(proof.label);
+    window.setTimeout(() => {
+      setCompletedProofActions((current) => (current.includes(proof.label) ? current : [...current, proof.label]));
+      if (proof.label === "Recovery walk") {
+        completeRewardMission("Take a recovery walk", 60);
+      }
+      if (proof.label === "Sleep boundary") {
+        completeRewardMission("Keep midnight boundary", 90);
+      }
+      if (proof.label === "Hydration check") {
+        setRewardPoints((current) => current + 20);
+      }
+      setSyncingProofAction("");
+    }, 3000);
   };
 
   const toggleGuardianAction = (action: string) => {
@@ -1592,6 +1807,12 @@ export default function Web3HealthPage() {
     } finally {
       setIsWalletConnecting(false);
     }
+  };
+
+  const saveProfileName = () => {
+    const nextName = pendingDisplayName.trim();
+    if (!nextName) return;
+    setDisplayName(nextName);
   };
 
   const toggleHealthPermission = (app: string, permission: string) => {
@@ -1687,6 +1908,68 @@ export default function Web3HealthPage() {
                   {walletError ? <p className="mt-5 max-w-2xl text-sm leading-6 text-rose-200">{walletError}</p> : null}
                 </div>
               </div>
+            </div>
+          </motion.div>
+        </section>
+      </main>
+    );
+  }
+
+  if (!isDemoAccount && !displayName.trim()) {
+    return (
+      <main className="min-h-screen overflow-hidden bg-[#f3f7f0] text-[#101510]">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(149,255,122,0.38),transparent_28rem),linear-gradient(180deg,#fbfff8,#edf4eb_54%,#f9fbf7)]" />
+        <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center px-6 py-10">
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full overflow-hidden rounded-[3rem] border border-[#dfe9dc] bg-white/78 p-5 shadow-[0_42px_150px_rgba(16,21,16,0.14)] backdrop-blur-3xl sm:p-8"
+          >
+            <div className="rounded-[2.45rem] border border-white/70 bg-[#0d150f] p-7 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:p-10 lg:p-12">
+              <div className="flex items-center gap-3">
+                <div className="flex size-13 items-center justify-center rounded-2xl bg-white text-[#101510]">
+                  <HeartPulse size={22} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold tracking-[0.26em] text-white/82">HEALTH TRACE</p>
+                  <p className="text-sm text-white/46">Wallet {formatWalletAddress(walletAddress)}</p>
+                </div>
+              </div>
+
+              <div className="mt-16 max-w-3xl">
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-trace-green/72">Create your profile</p>
+                <h1 className="mt-4 text-[clamp(3.2rem,7vw,6.6rem)] font-medium leading-[0.88] tracking-normal">
+                  What should Trace call you?
+                </h1>
+                <p className="mt-6 max-w-2xl text-lg leading-8 text-white/58">
+                  This nickname is saved to this wallet profile only. Health data, rewards, proofs, and settings will be tagged to the wallet you connected.
+                </p>
+              </div>
+
+              <form
+                className="mt-10 grid gap-4 sm:grid-cols-[1fr_auto]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  saveProfileName();
+                }}
+              >
+                <input
+                  value={pendingDisplayName}
+                  onChange={(event) => setPendingDisplayName(event.target.value)}
+                  placeholder="Enter name or nickname"
+                  className="h-16 rounded-full border border-white/16 bg-white/[0.08] px-6 text-lg font-medium text-white outline-none transition placeholder:text-white/32 focus:border-trace-green/70 focus:bg-white/[0.12]"
+                  autoFocus
+                />
+                <Button
+                  type="submit"
+                  disabled={!pendingDisplayName.trim()}
+                  className="h-16 rounded-full bg-trace-green px-9 text-base font-semibold text-[#071006] shadow-[0_18px_54px_rgba(149,255,122,0.24)] hover:bg-[#a7ff84] disabled:opacity-45"
+                >
+                  Continue
+                  <ArrowRight className="ml-2 size-5" />
+                </Button>
+              </form>
             </div>
           </motion.div>
         </section>
@@ -1891,6 +2174,11 @@ export default function Web3HealthPage() {
                     rewardPoints={rewardPoints}
                     completedRewardMissions={completedRewardMissions}
                     isDemoAccount={isDemoAccount}
+                    proofActions={proofActions}
+                    proofStreakLabel={proofStreakLabel}
+                    weeklyReportStats={weeklyReportStats}
+                    weeklyReportSummary={weeklyReportSummary}
+                    syncProofAction={syncProofAction}
                   />
                 </div>
               ) : null}
@@ -2039,7 +2327,7 @@ export default function Web3HealthPage() {
                           <div>
                             <div className="mb-3 flex items-center gap-2 text-[#5d6b5d]">
                               <Sparkles size={16} />
-                              <p className="text-sm font-medium">Good Morning, Mervyn</p>
+                              <p className="text-sm font-medium">Good Morning, {profileName}</p>
                             </div>
                             <h1 className="max-w-xl text-[clamp(2.15rem,11vw,3.45rem)] font-medium leading-[0.95] tracking-normal text-[#101510] sm:text-[clamp(2.05rem,3vw,3.45rem)]">
                               Here&apos;s your
@@ -2661,7 +2949,7 @@ export default function Web3HealthPage() {
                       </div>
                       <div className="rounded-[1.5rem] border border-[#dce6d9] bg-[#101510] p-4 text-white sm:p-5 xl:w-80">
                         <p className="text-sm text-white/42">Current streak</p>
-                        <p className="mt-2 text-4xl font-medium">6 days</p>
+                        <p className="mt-2 text-4xl font-medium">{proofStreakLabel}</p>
                         <p className="mt-2 text-sm text-trace-green">Builder Balance Badge pending</p>
                       </div>
                     </div>
@@ -2677,9 +2965,9 @@ export default function Web3HealthPage() {
                           </div>
                           <FileText className="size-7 text-trace-green" />
                         </div>
-                        <p className="mt-5 text-sm leading-6 text-white/62">{weeklyReport.summary}</p>
+                        <p className="mt-5 text-sm leading-6 text-white/62">{weeklyReportSummary}</p>
                         <div className="mt-6 grid grid-cols-2 gap-3">
-                          {weeklyReport.stats.map(([label, value]) => (
+                          {weeklyReportStats.map(([label, value]) => (
                             <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.055] p-4">
                               <p className="text-2xl font-medium">{value}</p>
                               <p className="mt-1 text-xs text-white/42">{label}</p>
@@ -2706,19 +2994,25 @@ export default function Web3HealthPage() {
                           <motion.article
                             key={proof.label}
                             whileHover={{ y: -5, scale: 1.015 }}
-                            className="rounded-[1.5rem] border border-[#e1e9df] bg-[#fbfdf9] p-4 sm:p-5"
+                            className={`rounded-[1.5rem] border p-4 sm:p-5 ${
+                              proof.completed ? "border-[#cfe0cb] bg-[#effbe9]" : "border-[#e1e9df] bg-[#fbfdf9]"
+                            }`}
                           >
                             <div className="mb-5 flex items-start justify-between sm:mb-6">
                               <div className="flex size-11 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#3a8f4d]">
-                                <Icon size={18} />
+                                {proof.completed ? <Check size={18} strokeWidth={3} /> : <Icon size={18} />}
                               </div>
                               <span className="rounded-full border border-[#dce6d9] bg-white px-3 py-1 text-xs text-[#657365]">
                                 {proof.status}
                               </span>
                             </div>
                             <h3 className="text-xl font-medium text-[#172117]">{proof.label}</h3>
-                            <Button className="mt-5 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525]">
-                              Generate proof
+                            <Button
+                              onClick={() => syncProofAction(proof)}
+                              disabled={proof.completed && proof.syncable}
+                              className="mt-5 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525] disabled:bg-[#dfe7dc] disabled:text-[#657365]"
+                            >
+                              {proof.actionLabel}
                             </Button>
                           </motion.article>
                         );
@@ -2890,6 +3184,26 @@ export default function Web3HealthPage() {
                           </div>
                         </div>
                         <div className="mt-6 grid gap-2">
+                          {walletAddress ? (
+                            <div className="rounded-[1.25rem] border border-[#dfe7dc] bg-white p-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a867a]">Profile name</p>
+                              <div className="mt-2 flex gap-2">
+                                <input
+                                  value={pendingDisplayName}
+                                  onChange={(event) => setPendingDisplayName(event.target.value)}
+                                  className="min-w-0 flex-1 rounded-full border border-[#dfe7dc] bg-[#f8fbf6] px-4 py-2 text-sm font-medium text-[#172117] outline-none focus:border-[#9DFF7A]"
+                                  placeholder="Name or nickname"
+                                />
+                                <Button
+                                  onClick={saveProfileName}
+                                  disabled={!pendingDisplayName.trim()}
+                                  className="rounded-full bg-[#101510] px-4 text-white hover:bg-[#253525]"
+                                >
+                                  Save
+                                </Button>
+                              </div>
+                            </div>
+                          ) : null}
                           <Button
                             onClick={connectWallet}
                             disabled={isWalletConnecting || Boolean(walletAddress)}
@@ -3043,6 +3357,35 @@ export default function Web3HealthPage() {
           </AnimatePresence>
         </section>
       </div>
+
+      <AnimatePresence>
+        {syncingProofAction ? (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#101510]/35 px-4 backdrop-blur-md"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <motion.div
+              className="w-full max-w-sm rounded-[1.75rem] border border-[#dfe7dc] bg-white p-5 text-center shadow-[0_34px_110px_rgba(16,21,16,0.2)]"
+              initial={{ opacity: 0, y: 18, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#101510] text-trace-green">
+                <Activity size={22} />
+              </div>
+              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.22em] text-[#607260]">Sync in progress</p>
+              <h2 className="mt-2 text-2xl font-medium leading-tight text-[#101510]">{syncingProofAction}</h2>
+              <p className="mt-3 text-sm leading-6 text-[#687668]">
+                Health Trace is syncing this healthy action to your connected health apps for proof creation.
+              </p>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {pendingDisconnectApp ? (
