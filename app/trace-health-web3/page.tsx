@@ -94,6 +94,7 @@ type WalletRegistryEntry = {
 
 type WalletProfile = {
   displayName: string;
+  resetAt?: string;
   healthContextConnectedDate: string;
   dailyRecords: Record<string, HealthDailyRecord>;
   lastTaskResetDate: string;
@@ -1807,6 +1808,7 @@ export default function Web3HealthPage() {
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [pendingDisplayName, setPendingDisplayName] = useState("");
+  const [walletResetAt, setWalletResetAt] = useState("");
   const [eyeBreakCount, setEyeBreakCount] = useState(0);
   const [isEyeResetOnCooldown, setIsEyeResetOnCooldown] = useState(false);
   const [eyeResetCooldownSeconds, setEyeResetCooldownSeconds] = useState(0);
@@ -2079,6 +2081,17 @@ export default function Web3HealthPage() {
     }
   };
 
+  const loadBackendWalletProfile = async (wallet: string) => {
+    try {
+      const response = await fetch(`/api/wallets?wallet=${encodeURIComponent(wallet)}`);
+      if (!response.ok) return null;
+      const data = (await response.json()) as { wallet?: WalletRegistryEntry | null };
+      return data.wallet ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const getStoredWalletRegistry = () => {
     try {
       return JSON.parse(window.localStorage.getItem(walletRegistryStorageKey) ?? "[]") as WalletRegistryEntry[];
@@ -2104,7 +2117,6 @@ export default function Web3HealthPage() {
 
   const saveWalletRegistry = (entries: WalletRegistryEntry[]) => {
     const normalized = entries
-      .filter((entry) => !entry.resetAt || entry.wallet.toLowerCase() === savedContextWalletAddress.toLowerCase())
       .map(normalizeWalletRegistryEntry)
       .reduce<WalletRegistryEntry[]>((list, entry) => {
         const existingIndex = list.findIndex((item) => item.wallet.toLowerCase() === entry.wallet.toLowerCase());
@@ -2229,8 +2241,20 @@ export default function Web3HealthPage() {
     }
 
     window.localStorage.removeItem(getWalletProfileKey(targetWallet));
+    const now = new Date().toISOString();
     saveWalletRegistry(
-      walletRegistry.filter((entry) => entry.wallet.toLowerCase() !== normalizedTarget),
+      walletRegistry.map((entry) =>
+        entry.wallet.toLowerCase() === normalizedTarget
+          ? {
+              ...entry,
+              displayName: "",
+              connectedApps: 0,
+              rewardPoints: 0,
+              resetAt: now,
+              lastSeen: now,
+            }
+          : entry,
+      ),
     );
     void fetch("/api/wallets", {
       method: "DELETE",
@@ -2303,48 +2327,99 @@ export default function Web3HealthPage() {
   }, [connectedHealthApps.length, displayName, rewardPoints, walletAddress]);
 
   useEffect(() => {
-    if (!walletAddress) {
-      hydratedWalletRef.current = "";
-      window.localStorage.removeItem(walletStorageKey);
-      return;
-    }
+    let cancelled = false;
 
-    window.localStorage.setItem(walletStorageKey, walletAddress);
-    const normalizedWallet = walletAddress.toLowerCase();
-    const todayKey = getGmt8DateKey();
-    const weekKey = getGmt8WeekKey();
-
-    if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
-      const demoTodayRecord = {
-        ...createDailyRecord(todayKey),
-        eyeBreakCount: 2,
-        postureResetDone: true,
-        completedProofActions: syncableProofLabels,
-      };
-      setDisplayName("Mervyn");
-      setPendingDisplayName("Mervyn");
-      setEyeBreakCount(2);
-      setWeeklyEyeBreaks(18);
-      setWeeklyStressChecks(9);
-      setWeeklySleepBoundaries(4);
-      setRewardPoints(1280);
-      setConnectedHealthApps(demoConnectedHealthApps);
-      setHealthContextConnectedDate(getGmt8WeekKey());
-      setDailyRecords({ [todayKey]: demoTodayRecord });
-      setHealthPermissions(demoHealthPermissions);
-      setCompletedProofActions(syncableProofLabels);
+    const resetToEmptyWallet = (normalizedWallet: string, resetAt = "") => {
+      setDisplayName("");
+      setPendingDisplayName("");
+      setWalletResetAt(resetAt);
+      setEyeBreakCount(0);
+      setWeeklyEyeBreaks(0);
+      setWeeklyStressChecks(0);
+      setWeeklySleepBoundaries(0);
+      setRewardPoints(0);
+      setConnectedHealthApps([]);
+      setHealthContextConnectedDate("");
+      setDailyRecords({});
+      setHealthPermissions(emptyHealthPermissions);
+      setCompletedRewardMissions([]);
+      setCompletedProofActions([]);
+      setCompletedGuardianActions([]);
+      setCompletedMarketActions([]);
+      setJournalSelections({});
+      setPostureResetDone(false);
+      setIsEyeResetOnCooldown(false);
+      setEyeResetCooldownSeconds(0);
+      setSelectedHealthApp(healthApps[0].label);
       hydratedWalletRef.current = normalizedWallet;
-      return;
-    }
+    };
 
-    const storedProfile = window.localStorage.getItem(getWalletProfileKey(walletAddress));
-    if (storedProfile) {
-      try {
-        const profile = JSON.parse(storedProfile) as Partial<WalletProfile>;
+    const hydrateWallet = async () => {
+      if (!walletAddress) {
+        hydratedWalletRef.current = "";
+        window.localStorage.removeItem(walletStorageKey);
+        return;
+      }
+
+      hydratedWalletRef.current = "";
+      window.localStorage.setItem(walletStorageKey, walletAddress);
+      const normalizedWallet = walletAddress.toLowerCase();
+      const todayKey = getGmt8DateKey();
+      const weekKey = getGmt8WeekKey();
+
+      if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
+        const demoTodayRecord = {
+          ...createDailyRecord(todayKey),
+          eyeBreakCount: 2,
+          postureResetDone: true,
+          completedProofActions: syncableProofLabels,
+        };
+        setDisplayName("Mervyn");
+        setPendingDisplayName("Mervyn");
+        setWalletResetAt("");
+        setEyeBreakCount(2);
+        setWeeklyEyeBreaks(18);
+        setWeeklyStressChecks(9);
+        setWeeklySleepBoundaries(4);
+        setRewardPoints(1280);
+        setConnectedHealthApps(demoConnectedHealthApps);
+        setHealthContextConnectedDate(getGmt8WeekKey());
+        setDailyRecords({ [todayKey]: demoTodayRecord });
+        setHealthPermissions(demoHealthPermissions);
+        setCompletedProofActions(syncableProofLabels);
+        hydratedWalletRef.current = normalizedWallet;
+        return;
+      }
+
+      const profileKey = getWalletProfileKey(walletAddress);
+      const backendProfile = await loadBackendWalletProfile(walletAddress);
+      if (cancelled) return;
+
+      const storedProfile = window.localStorage.getItem(profileKey);
+      let parsedProfile: Partial<WalletProfile> | null = null;
+      if (storedProfile) {
+        try {
+          parsedProfile = JSON.parse(storedProfile) as Partial<WalletProfile>;
+        } catch {
+          window.localStorage.removeItem(profileKey);
+        }
+      }
+
+      const backendResetAt = backendProfile?.resetAt;
+      const localResetAt = parsedProfile?.resetAt;
+      if (backendResetAt && (!localResetAt || new Date(backendResetAt).getTime() > new Date(localResetAt).getTime())) {
+        window.localStorage.removeItem(profileKey);
+        resetToEmptyWallet(normalizedWallet, backendResetAt);
+        return;
+      }
+
+      if (parsedProfile) {
+        const profile = parsedProfile;
         const shouldResetDailyTasks = profile.lastTaskResetDate !== todayKey;
         const shouldResetWeeklyCounters = profile.lastWeeklyResetKey !== weekKey;
         setDisplayName(profile.displayName ?? "");
         setPendingDisplayName(profile.displayName ?? "");
+        setWalletResetAt(profile.resetAt ?? backendResetAt ?? "");
         setEyeBreakCount(shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0);
         setWeeklyEyeBreaks(shouldResetWeeklyCounters ? 0 : profile.weeklyEyeBreaks ?? 0);
         setWeeklyStressChecks(shouldResetWeeklyCounters ? 0 : profile.weeklyStressChecks ?? 0);
@@ -2405,32 +2480,15 @@ export default function Web3HealthPage() {
         setSelectedHealthApp(profile.selectedHealthApp ?? healthApps[0].label);
         hydratedWalletRef.current = normalizedWallet;
         return;
-      } catch {
-        window.localStorage.removeItem(getWalletProfileKey(walletAddress));
       }
-    }
 
-    setDisplayName("");
-    setPendingDisplayName("");
-    setEyeBreakCount(0);
-    setWeeklyEyeBreaks(0);
-    setWeeklyStressChecks(0);
-    setWeeklySleepBoundaries(0);
-    setRewardPoints(0);
-    setConnectedHealthApps([]);
-    setHealthContextConnectedDate("");
-    setDailyRecords({});
-    setHealthPermissions(emptyHealthPermissions);
-    setCompletedRewardMissions([]);
-    setCompletedProofActions([]);
-    setCompletedGuardianActions([]);
-    setCompletedMarketActions([]);
-    setJournalSelections({});
-    setPostureResetDone(false);
-    setIsEyeResetOnCooldown(false);
-    setEyeResetCooldownSeconds(0);
-    setSelectedHealthApp(healthApps[0].label);
-    hydratedWalletRef.current = normalizedWallet;
+      resetToEmptyWallet(normalizedWallet);
+    };
+
+    void hydrateWallet();
+    return () => {
+      cancelled = true;
+    };
   }, [walletAddress]);
 
   useEffect(() => {
@@ -2440,6 +2498,7 @@ export default function Web3HealthPage() {
 
     const profile: WalletProfile = {
       displayName,
+      resetAt: walletResetAt || undefined,
       healthContextConnectedDate,
       dailyRecords,
       lastTaskResetDate: getGmt8DateKey(),
@@ -2482,6 +2541,7 @@ export default function Web3HealthPage() {
     rewardPoints,
     selectedHealthApp,
     walletAddress,
+    walletResetAt,
     weeklyEyeBreaks,
     weeklySleepBoundaries,
     weeklyStressChecks,

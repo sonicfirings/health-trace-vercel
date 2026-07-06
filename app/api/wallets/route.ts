@@ -49,6 +49,46 @@ const requireAdmin = (wallet?: string) => normalizeWallet(wallet) === ADMIN_WALL
 
 export async function GET(request: NextRequest) {
   const adminWallet = request.nextUrl.searchParams.get("adminWallet") ?? "";
+  const wallet = normalizeWallet(request.nextUrl.searchParams.get("wallet") ?? "");
+
+  if (wallet) {
+    const response = await supabaseRequest(
+      `wallet_profiles?wallet_address=eq.${encodeURIComponent(wallet)}&select=wallet_address,display_name,connected_app_count,reward_points,created_at,last_seen_at,reset_at&limit=1`,
+    );
+
+    if (!response) {
+      return NextResponse.json({ wallet: null });
+    }
+
+    if (!response.ok) {
+      return NextResponse.json({ error: await response.text() }, { status: response.status });
+    }
+
+    const rows = (await response.json()) as Array<{
+      wallet_address: string;
+      display_name: string | null;
+      connected_app_count: number | null;
+      reward_points: number | null;
+      created_at: string;
+      last_seen_at: string;
+      reset_at: string | null;
+    }>;
+    const row = rows[0];
+
+    return NextResponse.json({
+      wallet: row
+        ? {
+            wallet: row.wallet_address,
+            firstSeen: row.created_at,
+            lastSeen: row.last_seen_at,
+            displayName: row.display_name ?? "",
+            connectedApps: row.connected_app_count ?? 0,
+            rewardPoints: row.reward_points ?? 0,
+            resetAt: row.reset_at ?? undefined,
+          }
+        : null,
+    });
+  }
 
   if (!requireAdmin(adminWallet)) {
     return NextResponse.json({ error: "Admin wallet required." }, { status: 403 });
@@ -137,9 +177,33 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Admin wallet cannot be reset." }, { status: 400 });
   }
 
-  const response = await supabaseRequest(`wallet_profiles?wallet_address=eq.${encodeURIComponent(targetWallet)}`, {
+  const now = new Date().toISOString();
+  await supabaseRequest(`daily_records?wallet_address=eq.${encodeURIComponent(targetWallet)}`, {
     method: "DELETE",
     headers: { Prefer: "return=minimal" },
+  });
+  await supabaseRequest(`wallet_events?wallet_address=eq.${encodeURIComponent(targetWallet)}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" },
+  });
+  await supabaseRequest(`admin_actions?target_wallet=eq.${encodeURIComponent(targetWallet)}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" },
+  });
+
+  const response = await supabaseRequest("wallet_profiles?on_conflict=wallet_address", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({
+      wallet_address: targetWallet,
+      display_name: "",
+      connected_health_apps: [],
+      connected_app_count: 0,
+      health_permissions: {},
+      reward_points: 0,
+      last_seen_at: now,
+      reset_at: now,
+    }),
   });
 
   if (!response) {
@@ -150,5 +214,5 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: await response.text() }, { status: response.status });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, resetAt: now });
 }
