@@ -829,8 +829,8 @@ const syncableProofLabels = ["Recovery walk", "Sleep boundary", "Hydration check
 const rewardMissions = [
   { label: "Complete 20-20-20 eye break", reward: "+30 HT Points", status: "Ready", icon: Activity, targetTab: "Eye Break" },
   { label: "Log FOMO / FUD check-in", reward: "+45 HT Points", status: "New", icon: MessageCircle, targetTab: "Journal" },
-  { label: "Take a recovery walk", reward: "+60 HT Points", status: "Suggested", icon: Dumbbell, targetTab: "Recovery" },
-  { label: "Keep midnight boundary", reward: "+90 HT Points", status: "Tonight", icon: Moon, targetTab: "Recovery" },
+  { label: "Take a recovery walk", reward: "+60 HT Points", status: "Suggested", icon: Dumbbell, targetTab: "Proofs" },
+  { label: "Keep midnight boundary", reward: "+90 HT Points", status: "Tonight", icon: Moon, targetTab: "Proofs" },
 ];
 
 const healthBadges = [
