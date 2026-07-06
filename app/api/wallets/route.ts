@@ -137,17 +137,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Admin wallet cannot be reset." }, { status: 400 });
   }
 
-  const now = new Date().toISOString();
   const response = await supabaseRequest(`wallet_profiles?wallet_address=eq.${encodeURIComponent(targetWallet)}`, {
-    method: "PATCH",
+    method: "DELETE",
     headers: { Prefer: "return=minimal" },
-    body: JSON.stringify({
-      display_name: "",
-      connected_app_count: 0,
-      reward_points: 0,
-      reset_at: now,
-      last_seen_at: now,
-    }),
   });
 
   if (!response) {
@@ -158,5 +150,5 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: await response.text() }, { status: response.status });
   }
 
-  return NextResponse.json({ ok: true, resetAt: now });
+  return NextResponse.json({ ok: true });
 }
