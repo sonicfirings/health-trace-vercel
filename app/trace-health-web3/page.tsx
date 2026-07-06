@@ -785,16 +785,21 @@ function MobileTabScreen({
   weeklyReportSummary: string;
   syncProofAction: (proof: ProofAction) => void;
 }) {
-  const mobileGuardianTitle = isDemoAccount ? "High attention day." : "Guardian waiting for context.";
-  const mobileGuardianCopy = isDemoAccount
+  const hasMobileGuardianContext = isDemoAccount || connectedHealthApps.length > 0;
+  const mobileGuardianTitle = hasMobileGuardianContext ? "High attention day." : "Market volatility is live.";
+  const mobileGuardianCopy = hasMobileGuardianContext
     ? "ETH volatility is elevated, sleep is below baseline, and your screen streak crossed your stress threshold."
-    : "Connect health apps in Settings so the Guardian can start building a private baseline.";
-  const mobileGuardianStatus = isDemoAccount
-    ? guardianStatus
+    : "Connect health apps in Settings to add sleep, screen fatigue, and decision-risk context.";
+  const mobileGuardianStatus = hasMobileGuardianContext
+    ? [
+        { label: "Connected", detail: isDemoAccount ? "Demo stack" : `${connectedHealthApps.length} source${connectedHealthApps.length === 1 ? "" : "s"}`, className: "border-trace-green/30 bg-trace-green/15 text-trace-green" },
+        { label: "Decision watch", detail: "Protect trades", className: "border-amber-300/30 bg-amber-300/12 text-amber-100" },
+        { label: "91%", detail: "Confidence", className: "border-trace-green/30 bg-trace-green/15 text-trace-green" },
+      ]
     : [
-        { label: "0% confidence", detail: "No data", className: "border-white/10 bg-white/[0.06] text-white" },
-        { label: "No baseline", detail: "Fresh wallet", className: "border-white/10 bg-white/[0.06] text-white" },
-        { label: "Connect apps", detail: "Required", className: "border-white/10 bg-white/[0.06] text-white" },
+        { label: "Market feed", detail: "Live", className: "border-amber-300/25 bg-amber-300/10 text-white" },
+        { label: "Devices", detail: "0 sources", className: "border-white/10 bg-white/[0.06] text-white" },
+        { label: "Personal", detail: "0%", className: "border-white/10 bg-white/[0.06] text-white" },
       ];
   const mobileMarketStats = isDemoAccount
     ? [
@@ -1425,6 +1430,7 @@ export default function Web3HealthPage() {
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
   const isDemoAccount = walletAddress.toLowerCase() === savedContextWalletAddress.toLowerCase();
+  const hasGuardianContext = isDemoAccount || connectedHealthApps.length > 0;
   const profileName = displayName.trim() || "there";
   const dashboardTrend = isDemoAccount
     ? recoveryTrend
@@ -1477,37 +1483,39 @@ export default function Web3HealthPage() {
         ["Caffeine window", "--", "No journal baseline yet"],
         ["Builder load", "--", "No activity context yet"],
       ];
-  const guardianTitle = isDemoAccount ? "Today is a high-risk attention day." : "Your Guardian is waiting for context.";
-  const guardianCopy = isDemoAccount
+  const guardianTitle = hasGuardianContext
+    ? "Today is a high-risk attention day."
+    : "Market volatility is live. Personal health context is not connected.";
+  const guardianCopy = hasGuardianContext
     ? "ETH volatility is elevated, your sleep was below baseline, and your current screen streak crossed your usual stress threshold. Health Trace recommends protecting deep work before markets and avoiding major decisions after midnight."
-    : "This wallet is brand new. Connect health apps in Settings so Health Trace can start building a private baseline before it gives risk guidance.";
-  const guardianPills = isDemoAccount
+    : "Health Trace can always read the public market-volatility layer. Connect a health device to add sleep, screen fatigue, and decision-risk context.";
+  const guardianPills = hasGuardianContext
     ? [
-        { label: "No medical urgency", detail: "No acute alert", className: "border-sky-200 bg-sky-50 text-sky-700" },
-        { label: "Attention watch", detail: "Protect decisions", className: "border-amber-200 bg-amber-50 text-amber-700" },
+        { label: "Devices connected", detail: isDemoAccount ? "Demo health stack" : `${connectedHealthApps.length} source${connectedHealthApps.length === 1 ? "" : "s"}`, className: "border-sky-200 bg-sky-50 text-sky-700" },
+        { label: "Decision watch", detail: "Protect trades", className: "border-amber-200 bg-amber-50 text-amber-700" },
         { label: "91% confidence", detail: "Strong signal match", className: "border-[#9DFF7A]/50 bg-[#ecffe6] text-[#2f7d3c]" },
       ]
     : [
-        { label: "No baseline", detail: "0 signals", className: "border-[#dce6d9] bg-white text-[#657365]" },
-        { label: "Connect sources", detail: "Required", className: "border-[#dce6d9] bg-white text-[#657365]" },
-        { label: "0% confidence", detail: "No data yet", className: "border-[#dce6d9] bg-white text-[#657365]" },
+        { label: "Market feed live", detail: "BTC/ETH volatility", className: "border-amber-200 bg-amber-50 text-amber-700" },
+        { label: "Devices connected", detail: "0 sources", className: "border-[#dce6d9] bg-white text-[#657365]" },
+        { label: "Personal confidence", detail: "0%", className: "border-[#dce6d9] bg-white text-[#657365]" },
       ];
-  const guardianEvidence = isDemoAccount
+  const guardianEvidence = hasGuardianContext
     ? [
-        ["Market volatility", "BTC/ETH movement is 18% above your baseline watchlist."],
+        ["Market volatility", "BTC/ETH movement is 18% above the live volatility feed.", "https://www.tradingview.com/symbols/BTCUSD/"],
         ["Sleep debt", "Three late nights created 1h 48m of accumulated sleep debt."],
         ["Screen fatigue", "91 minutes of uninterrupted chart and Discord exposure."],
-        ["Decision risk", "Higher impulse risk appears when sleep drops and volatility rises."],
+        ["Decision risk", "Delay high-stress trades until after lunch and complete one eye break before the next market session."],
       ]
     : [
-        ["Market volatility", "BTC volatility can be shown before health sources are connected."],
-        ["Sleep debt", "No sleep source connected yet."],
-        ["Screen fatigue", "No screen or eye-break context yet."],
-        ["Decision risk", "Guardian needs health and journal signals first."],
+        ["Market volatility", "BTC/ETH volatility is available as a live public market signal before devices are connected.", "https://www.tradingview.com/symbols/BTCUSD/"],
+        ["Sleep debt", "0 hours. Connect Apple Health, Samsung Health, Google Fit, or Mi Fitness to estimate recovery debt."],
+        ["Screen fatigue", "0 minutes. Connect a device or screen context source to unlock fatigue detection."],
+        ["Decision risk", "0 personalized risk. Health Trace needs sleep, screen, and journal signals before recommending trading decisions."],
       ];
-  const guardianReadout = isDemoAccount
+  const guardianReadout = hasGuardianContext
     ? { value: "Watch", label: "Attention risk", chart: [42, 48, 56, 64, 72, 68, 62] }
-    : { value: "New", label: "No baseline", chart: [0, 0, 0, 0, 0, 0, 0] };
+    : { value: "0", label: "Personal signals", chart: [0, 0, 0, 0, 0, 0, 0] };
   const marketStressScore = isDemoAccount ? "62" : "--";
   const marketStressLabel = isDemoAccount ? "Elevated, manageable" : "Health context needed";
   const marketStressCopy = isDemoAccount
@@ -2559,10 +2567,20 @@ export default function Web3HealthPage() {
                         >
                           <div className="grid gap-4 p-4 sm:gap-5 sm:p-7 xl:grid-cols-[1fr_0.7fr]">
                             <div className="grid gap-3 md:grid-cols-2 sm:gap-4">
-                              {guardianEvidence.map(([title, detail]) => (
+                              {guardianEvidence.map(([title, detail, href]) => (
                                 <div key={title} className="rounded-[1.35rem] border border-[#e1e9df] bg-[#f8fbf6] p-4 sm:rounded-3xl sm:p-5">
                                   <p className="text-sm font-medium text-[#5d6b5d]">{title}</p>
                                   <p className="mt-2 text-base font-medium leading-6 text-[#172117] sm:text-lg sm:leading-7">{detail}</p>
+                                  {href ? (
+                                    <a
+                                      href={href}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="mt-3 inline-flex rounded-full border border-[#dce6d9] bg-white px-3 py-1.5 text-xs font-medium text-[#2f7d3c] transition hover:border-[#9DFF7A]"
+                                    >
+                                      Open live volatility
+                                    </a>
+                                  ) : null}
                                 </div>
                               ))}
                             </div>
