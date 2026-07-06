@@ -2103,16 +2103,32 @@ export default function Web3HealthPage() {
     window.localStorage.setItem(walletHistoryStorageKey, JSON.stringify(nextHistory));
   };
 
+  const normalizeWalletRegistryEntry = (entry: WalletRegistryEntry): WalletRegistryEntry => {
+    if (entry.wallet.toLowerCase() !== savedContextWalletAddress.toLowerCase()) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      wallet: savedContextWalletAddress,
+      displayName: "Mervyn",
+      connectedApps: demoConnectedHealthApps.length,
+      rewardPoints: 1280,
+      resetAt: undefined,
+    };
+  };
+
   const saveWalletRegistry = (entries: WalletRegistryEntry[]) => {
     const normalized = entries
+      .map(normalizeWalletRegistryEntry)
       .reduce<WalletRegistryEntry[]>((list, entry) => {
         const existingIndex = list.findIndex((item) => item.wallet.toLowerCase() === entry.wallet.toLowerCase());
         if (existingIndex >= 0) {
-          list[existingIndex] = {
+          list[existingIndex] = normalizeWalletRegistryEntry({
             ...list[existingIndex],
             ...entry,
             firstSeen: list[existingIndex].firstSeen || entry.firstSeen,
-          };
+          });
           return list;
         }
         return [...list, entry];
@@ -2127,11 +2143,11 @@ export default function Web3HealthPage() {
     rememberWallet(entry.wallet);
     const storedRegistry = getStoredWalletRegistry();
     const existing = storedRegistry.find((item) => item.wallet.toLowerCase() === entry.wallet.toLowerCase());
-    const nextEntry = {
+    const nextEntry = normalizeWalletRegistryEntry({
       ...existing,
       ...entry,
       firstSeen: existing?.firstSeen ?? entry.firstSeen,
-    };
+    });
 
     saveWalletRegistry([
       ...storedRegistry.filter((item) => item.wallet.toLowerCase() !== entry.wallet.toLowerCase()),
