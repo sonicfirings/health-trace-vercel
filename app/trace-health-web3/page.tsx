@@ -41,6 +41,8 @@ import { Button } from "@/components/ui/button";
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: "accountsChanged", handler: (accounts: string[]) => void) => void;
+  removeListener?: (event: "accountsChanged", handler: (accounts: string[]) => void) => void;
 };
 
 declare global {
@@ -2156,6 +2158,33 @@ export default function Web3HealthPage() {
     void syncWalletRegistryEntry(nextEntry);
   };
 
+  const rememberProviderAccounts = (accounts: string[]) => {
+    const now = new Date().toISOString();
+    accounts.filter(Boolean).forEach((account) => {
+      const existing = getStoredWalletRegistry().find((entry) => entry.wallet.toLowerCase() === account.toLowerCase());
+      upsertWalletRegistry({
+        wallet: account,
+        firstSeen: existing?.firstSeen ?? now,
+        lastSeen: now,
+        displayName: existing?.displayName ?? "",
+        connectedApps: existing?.connectedApps ?? 0,
+        rewardPoints: existing?.rewardPoints ?? 0,
+        resetAt: existing?.resetAt,
+      });
+    });
+  };
+
+  const scanProviderAccounts = async () => {
+    if (typeof window === "undefined" || !window.ethereum) return;
+
+    try {
+      const accounts = (await window.ethereum.request({ method: "eth_accounts" })) as string[];
+      rememberProviderAccounts(accounts ?? []);
+    } catch {
+      // Some wallet providers block passive account scans.
+    }
+  };
+
   const readWalletRegistry = () => {
     const storedRegistry = getStoredWalletRegistry();
     const currentWallet = window.localStorage.getItem(walletStorageKey);
@@ -2223,6 +2252,7 @@ export default function Web3HealthPage() {
   };
 
   const refreshAdminWalletRegistry = () => {
+    void scanProviderAccounts();
     readWalletRegistry();
     void loadBackendWalletRegistry();
   };
@@ -2281,6 +2311,20 @@ export default function Web3HealthPage() {
     if (storedWallet) {
       setWalletAddress(storedWallet);
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.ethereum?.on) return;
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      rememberProviderAccounts(accounts);
+      if (accounts[0]) {
+        setWalletAddress(accounts[0]);
+      }
+    };
+
+    window.ethereum.on("accountsChanged", handleAccountsChanged);
+    return () => window.ethereum?.removeListener?.("accountsChanged", handleAccountsChanged);
   }, []);
 
   useEffect(() => {
@@ -2722,6 +2766,7 @@ export default function Web3HealthPage() {
     try {
       const accounts = (await window.ethereum.request({ method: "eth_requestAccounts" })) as string[];
       if (accounts?.[0]) {
+        rememberProviderAccounts(accounts);
         const nextWallet = accounts[0];
         const now = new Date().toISOString();
         const existing = getStoredWalletRegistry().find((entry) => entry.wallet.toLowerCase() === nextWallet.toLowerCase());
