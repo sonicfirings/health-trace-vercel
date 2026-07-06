@@ -81,6 +81,7 @@ const walletProfileStoragePrefix = "health-trace-web3-profile:";
 
 type WalletProfile = {
   displayName: string;
+  healthContextConnectedDate: string;
   lastTaskResetDate: string;
   lastWeeklyResetKey: string;
   weeklyEyeBreaks: number;
@@ -103,6 +104,7 @@ type WalletProfile = {
 
 const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
 const getGmt8DateKey = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const getGmt8DateFromKey = (key: string) => new Date(`${key}T00:00:00.000Z`);
 const getGmt8WeekStart = () => {
   const gmt8Now = new Date(Date.now() + 8 * 60 * 60 * 1000);
   const day = gmt8Now.getUTCDay();
@@ -117,6 +119,18 @@ const formatGmt8WeekRange = () => {
   const end = new Date(start);
   end.setUTCDate(start.getUTCDate() + 6);
   return `${formatter.format(start)} - ${formatter.format(end)}`;
+};
+const getGmt8CurrentWeekDays = () => {
+  const formatter = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" });
+  const start = getGmt8WeekStart();
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + index);
+    return {
+      day: formatter.format(date),
+      dateKey: date.toISOString().slice(0, 10),
+    };
+  });
 };
 
 type ProofAction = {
@@ -1424,6 +1438,7 @@ export default function Web3HealthPage() {
   const [rewardPoints, setRewardPoints] = useState(0);
   const [selectedHealthApp, setSelectedHealthApp] = useState(healthApps[0].label);
   const [connectedHealthApps, setConnectedHealthApps] = useState<string[]>([]);
+  const [healthContextConnectedDate, setHealthContextConnectedDate] = useState("");
   const [pendingDisconnectApp, setPendingDisconnectApp] = useState("");
   const [healthPermissions, setHealthPermissions] = useState<Record<string, string[]>>(emptyHealthPermissions);
   const [badgeHintOpen, setBadgeHintOpen] = useState("");
@@ -1441,9 +1456,29 @@ export default function Web3HealthPage() {
     (fomoReflectionDone ? 1 : 0) +
     completedMarketActions.length;
   const proofStreakLabel = isDemoAccount ? "6 days" : completedProofCount > 0 ? "1 day" : "0 days";
-  const dashboardTrend = hasLiveHealthContext
-    ? recoveryTrend
-    : recoveryTrend.map((item) => ({ ...item, score: 0, sleep: 0, market: 0 }));
+  const currentWeekDays = getGmt8CurrentWeekDays();
+  const todayKey = getGmt8DateKey();
+  const chartConnectedDate = isDemoAccount ? getGmt8WeekKey() : healthContextConnectedDate;
+  const dashboardTrend = currentWeekDays.map((day, index) => {
+    const demoPoint = recoveryTrend[index] ?? recoveryTrend[recoveryTrend.length - 1];
+    const isFuture = day.dateKey > todayKey;
+    const isBeforeConnected = !chartConnectedDate || day.dateKey < chartConnectedDate;
+
+    if (!hasLiveHealthContext || isBeforeConnected) {
+      return { ...day, score: 0, sleep: 0, market: 0 };
+    }
+
+    if (isFuture) {
+      return { ...day, score: null, sleep: null, market: null };
+    }
+
+    return {
+      ...day,
+      score: demoPoint.score,
+      sleep: demoPoint.sleep,
+      market: demoPoint.market,
+    };
+  });
   const dashboardSignals = (hasLiveHealthContext ? homeSignals : emptyHomeSignals).map((signal) =>
     signal.label === "Proof Streak"
       ? {
@@ -1590,6 +1625,7 @@ export default function Web3HealthPage() {
       setWeeklySleepBoundaries(4);
       setRewardPoints(1280);
       setConnectedHealthApps(demoConnectedHealthApps);
+      setHealthContextConnectedDate(getGmt8WeekKey());
       setHealthPermissions(demoHealthPermissions);
       setCompletedProofActions(syncableProofLabels);
       hydratedWalletRef.current = normalizedWallet;
@@ -1610,6 +1646,7 @@ export default function Web3HealthPage() {
         setWeeklySleepBoundaries(shouldResetWeeklyCounters ? 0 : profile.weeklySleepBoundaries ?? 0);
         setRewardPoints(profile.rewardPoints ?? 0);
         setConnectedHealthApps(profile.connectedHealthApps ?? []);
+        setHealthContextConnectedDate(profile.healthContextConnectedDate ?? "");
         setHealthPermissions(profile.healthPermissions ?? emptyHealthPermissions);
         setCompletedRewardMissions(shouldResetDailyTasks ? [] : profile.completedRewardMissions ?? []);
         setCompletedProofActions(shouldResetDailyTasks ? [] : profile.completedProofActions ?? []);
@@ -1635,6 +1672,7 @@ export default function Web3HealthPage() {
     setWeeklySleepBoundaries(0);
     setRewardPoints(0);
     setConnectedHealthApps([]);
+    setHealthContextConnectedDate("");
     setHealthPermissions(emptyHealthPermissions);
     setCompletedRewardMissions([]);
     setCompletedProofActions([]);
@@ -1655,6 +1693,7 @@ export default function Web3HealthPage() {
 
     const profile: WalletProfile = {
       displayName,
+      healthContextConnectedDate,
       lastTaskResetDate: getGmt8DateKey(),
       lastWeeklyResetKey: getGmt8WeekKey(),
       weeklyEyeBreaks,
@@ -1685,6 +1724,7 @@ export default function Web3HealthPage() {
     displayName,
     eyeBreakCount,
     eyeResetCooldownSeconds,
+    healthContextConnectedDate,
     healthPermissions,
     isDemoAccount,
     isEyeResetOnCooldown,
@@ -1902,6 +1942,7 @@ export default function Web3HealthPage() {
   };
 
   const connectHealthApp = (app: string) => {
+    setHealthContextConnectedDate((current) => current || getGmt8DateKey());
     setConnectedHealthApps((current) => (current.includes(app) ? current : [...current, app]));
     setHealthPermissions((current) => ({
       ...current,
@@ -2434,15 +2475,15 @@ export default function Web3HealthPage() {
                           </div>
                         </div>
 
-                        <div className="mt-4 h-32 overflow-visible rounded-[1.5rem] border border-[#e0e8dd] bg-[#fbfdf9] px-3 py-4 sm:h-40 sm:px-6">
+                        <div className="mt-4 h-32 overflow-visible rounded-[1.5rem] border border-[#e0e8dd] bg-[#fbfdf9] px-2 py-4 sm:h-40 sm:px-3">
                           <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={dashboardTrend} margin={{ left: 22, right: 42, top: 8, bottom: 0 }}>
+                            <LineChart data={dashboardTrend} margin={{ left: 0, right: 4, top: 8, bottom: 0 }}>
                               <XAxis
                                 dataKey="day"
                                 axisLine={false}
                                 interval={0}
                                 minTickGap={0}
-                                padding={{ left: 12, right: 26 }}
+                                padding={{ left: 0, right: 0 }}
                                 tickLine={false}
                                 tick={{ fill: "#7a867a", fontSize: 12 }}
                               />
