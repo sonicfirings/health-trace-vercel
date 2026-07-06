@@ -435,7 +435,7 @@ const rewardMissions = [
 ];
 
 const healthBadges = [
-  { label: "Builder Balance", detail: "Identity badge for consistently completing healthy builder routines.", status: "Mint-ready" },
+  { label: "Builder Balance", detail: "Identity badge for consistently completing healthy builder routines.", status: "Not ready" },
   { label: "Calm Trader", detail: "Progress badge for using cool-downs before stressful market decisions.", status: "82%" },
   { label: "Recovery Keeper", detail: "Ongoing badge for protecting sleep and recovery after market spikes.", status: "Active" },
 ];
@@ -1426,6 +1426,7 @@ export default function Web3HealthPage() {
   const [connectedHealthApps, setConnectedHealthApps] = useState<string[]>([]);
   const [pendingDisconnectApp, setPendingDisconnectApp] = useState("");
   const [healthPermissions, setHealthPermissions] = useState<Record<string, string[]>>(emptyHealthPermissions);
+  const [badgeHintOpen, setBadgeHintOpen] = useState("");
   const mobilePrimaryNavigation = navigation.slice(0, 8);
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
@@ -1475,7 +1476,7 @@ export default function Web3HealthPage() {
     ["HT Points", rewardPoints.toLocaleString()],
     ["Level", isDemoAccount ? "4" : "1"],
     ["Streak", proofStreakLabel],
-    ["Badge status", isDemoAccount ? "Mint-ready" : "NOT READY"],
+    ["Badge status", "Not ready"],
   ];
   const dashboardBadges = hasLiveHealthContext
     ? healthBadges
@@ -3115,10 +3116,7 @@ export default function Web3HealthPage() {
                       <p className="text-sm font-semibold uppercase tracking-[0.24em] text-trace-green/72">
                         On-chain health tasks
                       </p>
-                      <h2 className="mt-4 text-[clamp(2rem,3.1vw,3.85rem)] font-medium leading-[0.95]">
-                        Rewards for recovery, not speculation.
-                      </h2>
-                      <div className="mt-7 grid grid-cols-2 gap-3">
+                      <div className="mt-5 grid grid-cols-2 gap-3">
                         {rewardStats.map(([label, value], index) => (
                           <div
                             key={label}
@@ -3127,11 +3125,31 @@ export default function Web3HealthPage() {
                             <div className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full border border-trace-green/20 bg-trace-green/10 text-[0.65rem] font-semibold text-trace-green">
                               {index + 1}
                             </div>
-                            <p className="pr-8 text-xl font-medium leading-tight">{value}</p>
+                            <div className="flex items-center gap-2 pr-8">
+                              <p className="text-xl font-medium leading-tight">{value}</p>
+                              {label === "Badge status" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setBadgeHintOpen((current) => (current === "stats" ? "" : "stats"))}
+                                  className="flex size-5 items-center justify-center rounded-full border border-trace-green/30 bg-trace-green/10 text-[0.65rem] font-bold text-trace-green"
+                                  aria-label="Badge status requirement"
+                                >
+                                  !
+                                </button>
+                              ) : null}
+                            </div>
                             <p className="mt-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/42">{label}</p>
+                            {label === "Badge status" && badgeHintOpen === "stats" ? (
+                              <p className="mt-3 rounded-xl border border-trace-green/20 bg-trace-green/10 px-3 py-2 text-xs leading-5 text-trace-green">
+                                Reach level 6 to mint badge.
+                              </p>
+                            ) : null}
                           </div>
                         ))}
                       </div>
+                      <h2 className="mt-7 text-[clamp(2rem,3.1vw,3.85rem)] font-medium leading-[0.95]">
+                        Rewards for recovery, not speculation.
+                      </h2>
                     </div>
 
                     <div className="grid gap-4">
@@ -3180,7 +3198,24 @@ export default function Web3HealthPage() {
                             <ShieldCheck className="size-5 text-[#2f7d3c]" />
                             <p className="mt-4 whitespace-nowrap text-base font-medium text-[#172117]">{badge.label}</p>
                             <p className="mt-2 text-sm leading-5 text-[#687668]">{badge.detail}</p>
-                            <p className="mt-4 text-sm font-medium text-[#2f7d3c]">{badge.status}</p>
+                            <div className="mt-4 flex items-center gap-2">
+                              <p className="whitespace-nowrap text-sm font-medium text-[#2f7d3c]">{badge.status}</p>
+                              {badge.label === "Builder Balance" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setBadgeHintOpen((current) => (current === "builder" ? "" : "builder"))}
+                                  className="flex size-5 items-center justify-center rounded-full border border-[#bad9b4] bg-white text-[0.65rem] font-bold text-[#2f7d3c]"
+                                  aria-label="Builder Balance badge requirement"
+                                >
+                                  !
+                                </button>
+                              ) : null}
+                            </div>
+                            {badge.label === "Builder Balance" && badgeHintOpen === "builder" ? (
+                              <p className="mt-3 rounded-xl border border-[#dce6d9] bg-white px-3 py-2 text-xs leading-5 text-[#2f7d3c]">
+                                Reach level 6 to mint badge.
+                              </p>
+                            ) : null}
                           </div>
                         ))}
                       </div>
