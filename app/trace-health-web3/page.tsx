@@ -179,7 +179,7 @@ const homeSignals = [
   {
     label: "Market Stress",
     value: "62",
-    detail: "BTC/ETH volatility is above normal",
+    detail: "BTC volatility is above normal",
     icon: TrendingUp,
     tone: "text-amber-300",
     chart: [31, 44, 56, 48, 76, 69, 62],
@@ -788,7 +788,7 @@ function MobileTabScreen({
   const hasMobileGuardianContext = isDemoAccount || connectedHealthApps.length > 0;
   const mobileGuardianTitle = hasMobileGuardianContext ? "High attention day." : "Market volatility is live.";
   const mobileGuardianCopy = hasMobileGuardianContext
-    ? "ETH volatility is elevated, sleep is below baseline, and your screen streak crossed your stress threshold."
+    ? "BTC volatility is elevated, sleep is below baseline, and your screen streak crossed your stress threshold."
     : "Connect health apps in Settings to add sleep, screen fatigue, and decision-risk context.";
   const mobileGuardianStatus = hasMobileGuardianContext
     ? [
@@ -797,11 +797,11 @@ function MobileTabScreen({
         { label: "91%", detail: "Confidence", className: "border-trace-green/30 bg-trace-green/15 text-trace-green" },
       ]
     : [
-        { label: "Market feed", detail: "Live", className: "border-amber-300/25 bg-amber-300/10 text-white" },
+        { label: "Market feed", detail: "BTC +18%", className: "border-amber-300/25 bg-amber-300/10 text-white" },
         { label: "Devices", detail: "0 sources", className: "border-white/10 bg-white/[0.06] text-white" },
         { label: "Personal", detail: "0%", className: "border-white/10 bg-white/[0.06] text-white" },
       ];
-  const mobileMarketStats = isDemoAccount
+  const mobileMarketStats = hasMobileGuardianContext
     ? [
         ["Volatility", "+18%"],
         ["Screen load", "6h 14m"],
@@ -812,7 +812,7 @@ function MobileTabScreen({
         ["Screen load", "--"],
         ["Body stress", "--"],
       ];
-  const mobileRecoveryStats = isDemoAccount
+  const mobileRecoveryStats = hasMobileGuardianContext
     ? [
         ["Sleep debt", "1h 48m"],
         ["Deep sleep", "Stable"],
@@ -823,7 +823,7 @@ function MobileTabScreen({
         ["Deep sleep", "--"],
         ["Wind-down", "--"],
       ];
-  const mobileBadges = isDemoAccount ? healthBadges : healthBadges.map((badge) => ({ ...badge, status: "NOT READY" }));
+  const mobileBadges = hasMobileGuardianContext ? healthBadges : healthBadges.map((badge) => ({ ...badge, status: "NOT READY" }));
 
   if (activeTab === "Guardian") {
     return (
@@ -896,8 +896,8 @@ function MobileTabScreen({
             <div className="mt-6 grid grid-cols-[8.2rem_1fr] items-center gap-4">
               <div className="flex size-32 items-center justify-center rounded-full bg-[conic-gradient(#fbbf24_0deg,#9DFF7A_224deg,rgba(255,255,255,0.12)_224deg)] p-1.5 shadow-[0_0_70px_rgba(251,191,36,0.16)]">
                 <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510] ring-1 ring-white/10">
-                  <p className="text-5xl font-medium leading-none">{isDemoAccount ? "62" : "--"}</p>
-                  <p className="mt-1 text-[0.62rem] uppercase tracking-[0.16em] text-amber-200">{isDemoAccount ? "Elevated" : "No data"}</p>
+                  <p className="text-5xl font-medium leading-none">{hasMobileGuardianContext ? "62" : "--"}</p>
+                  <p className="mt-1 text-[0.62rem] uppercase tracking-[0.16em] text-amber-200">{hasMobileGuardianContext ? "Elevated" : "No data"}</p>
                 </div>
               </div>
               <div className="space-y-2">
@@ -912,7 +912,7 @@ function MobileTabScreen({
             <div className="mt-5 rounded-[1.35rem] border border-white/10 bg-white/[0.065] p-4">
               <p className="text-sm font-medium text-white">Guardian readout</p>
               <p className="mt-2 text-xs leading-5 text-white/56">
-                {isDemoAccount
+                {hasMobileGuardianContext
                   ? "Market movement is not dangerous by itself. The risk appears when volatility, screen time, and sleep debt stack together."
                   : "BTC volatility is visible, but personal stress signals need connected health sources."}
               </p>
@@ -976,18 +976,18 @@ function MobileTabScreen({
             <div className="mt-4 flex items-end justify-between gap-5">
               <div>
                 <h2 className="text-[2.45rem] font-medium leading-[0.92] tracking-normal">
-                  {isDemoAccount ? "Recovery is still protected." : "Recovery needs a baseline."}
+                  {hasMobileGuardianContext ? "Recovery is still protected." : "Recovery needs a baseline."}
                 </h2>
                 <p className="mt-4 text-sm leading-6 text-white/62">
-                  {isDemoAccount
+                  {hasMobileGuardianContext
                     ? "You have mild sleep debt, but HRV and morning movement are keeping your buffer intact."
                     : "Connect sleep and activity data so Trace can personalize recovery guidance."}
                 </p>
               </div>
               <div className="flex size-24 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_302deg,rgba(255,255,255,0.12)_302deg)] p-1.5 shadow-[0_0_48px_rgba(157,255,122,0.18)]">
                 <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510]">
-                  <p className="text-3xl font-medium leading-none">{isDemoAccount ? "84" : "--"}</p>
-                  <p className="mt-1 text-[0.6rem] text-trace-green">{isDemoAccount ? "Ready" : "No data"}</p>
+                  <p className="text-3xl font-medium leading-none">{hasMobileGuardianContext ? "84" : "--"}</p>
+                  <p className="mt-1 text-[0.6rem] text-trace-green">{hasMobileGuardianContext ? "Ready" : "No data"}</p>
                 </div>
               </div>
             </div>
@@ -1430,17 +1430,34 @@ export default function Web3HealthPage() {
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
   const isDemoAccount = walletAddress.toLowerCase() === savedContextWalletAddress.toLowerCase();
-  const hasGuardianContext = isDemoAccount || connectedHealthApps.length > 0;
+  const hasLiveHealthContext = isDemoAccount || connectedHealthApps.length > 0;
+  const hasGuardianContext = hasLiveHealthContext;
   const profileName = displayName.trim() || "there";
-  const dashboardTrend = isDemoAccount
+  const fomoReflectionDone = Boolean(journalSelections.FOMO || journalSelections.FUD || journalSelections["Revenge trade urge"]);
+  const completedProofCount =
+    completedProofActions.length +
+    (eyeBreakCount >= 6 ? 1 : 0) +
+    (fomoReflectionDone ? 1 : 0) +
+    completedMarketActions.length;
+  const proofStreakLabel = isDemoAccount ? "6 days" : completedProofCount > 0 ? "1 day" : "0 days";
+  const dashboardTrend = hasLiveHealthContext
     ? recoveryTrend
     : recoveryTrend.map((item) => ({ ...item, score: 0, sleep: 0, market: 0 }));
-  const dashboardSignals = isDemoAccount ? homeSignals : emptyHomeSignals;
-  const dashboardBriefItems = isDemoAccount ? briefItems : emptyBriefItems;
-  const healthScore = isDemoAccount ? "86" : "0";
-  const healthScoreLabel = isDemoAccount ? "Stable" : "No data";
-  const currentState = isDemoAccount ? "High attention load" : "No baseline yet";
-  const mobileSummaryStats = isDemoAccount
+  const dashboardSignals = (hasLiveHealthContext ? homeSignals : emptyHomeSignals).map((signal) =>
+    signal.label === "Proof Streak"
+      ? {
+          ...signal,
+          value: proofStreakLabel,
+          detail: completedProofCount > 0 || isDemoAccount ? "Healthy actions privately verified" : "No healthy actions verified yet",
+          chart: completedProofCount > 0 || isDemoAccount ? signal.chart : [0, 0, 0, 0, 0, 0, 0],
+        }
+      : signal,
+  );
+  const dashboardBriefItems = hasLiveHealthContext ? briefItems : emptyBriefItems;
+  const healthScore = hasLiveHealthContext ? "86" : "0";
+  const healthScoreLabel = hasLiveHealthContext ? "Stable" : "No data";
+  const currentState = hasLiveHealthContext ? "High attention load" : "No baseline yet";
+  const mobileSummaryStats = hasLiveHealthContext
     ? [
         ["Stress", "62", "Watch"],
         ["Sleep", "1h 48m", "Debt"],
@@ -1451,19 +1468,19 @@ export default function Web3HealthPage() {
         ["Score", "0", "No data"],
         ["Proofs", "0", "Start"],
       ];
-  const guardianRecommendation = isDemoAccount
+  const guardianRecommendation = hasLiveHealthContext
     ? "Do deep work before checking markets. Take an eye break now, and avoid major decisions after midnight."
     : "Connect a health source in Settings to start building your private baseline.";
   const rewardStats = [
     ["HT Points", rewardPoints.toLocaleString()],
     ["Level", isDemoAccount ? "4" : "1"],
-    ["Streak", isDemoAccount ? "6 days" : "0 days"],
+    ["Streak", proofStreakLabel],
     ["Badge status", isDemoAccount ? "Mint-ready" : "NOT READY"],
   ];
-  const dashboardBadges = isDemoAccount
+  const dashboardBadges = hasLiveHealthContext
     ? healthBadges
     : healthBadges.map((badge) => ({ ...badge, status: "NOT READY" }));
-  const dashboardMarketDrivers = isDemoAccount
+  const dashboardMarketDrivers = hasLiveHealthContext
     ? marketDrivers
     : marketDrivers.map((driver) =>
         driver.label === "BTC volatility"
@@ -1475,7 +1492,7 @@ export default function Web3HealthPage() {
               chart: [0, 0, 0, 0, 0, 0, 0],
             },
       );
-  const dashboardRecoveryRows = isDemoAccount
+  const dashboardRecoveryRows = hasLiveHealthContext
     ? recoveryRows
     : [
         ["Midnight activity", "--", "Connect sleep/activity data"],
@@ -1487,7 +1504,7 @@ export default function Web3HealthPage() {
     ? "Today is a high-risk attention day."
     : "Market volatility is live. Personal health context is not connected.";
   const guardianCopy = hasGuardianContext
-    ? "ETH volatility is elevated, your sleep was below baseline, and your current screen streak crossed your usual stress threshold. Health Trace recommends protecting deep work before markets and avoiding major decisions after midnight."
+    ? "BTC volatility is elevated, your sleep was below baseline, and your current screen streak crossed your usual stress threshold. Health Trace recommends protecting deep work before markets and avoiding major decisions after midnight."
     : "Health Trace can always read the public market-volatility layer. Connect a health device to add sleep, screen fatigue, and decision-risk context.";
   const guardianPills = hasGuardianContext
     ? [
@@ -1496,19 +1513,19 @@ export default function Web3HealthPage() {
         { label: "91% confidence", detail: "Strong signal match", className: "border-[#9DFF7A]/50 bg-[#ecffe6] text-[#2f7d3c]" },
       ]
     : [
-        { label: "Market feed live", detail: "BTC/ETH volatility", className: "border-amber-200 bg-amber-50 text-amber-700" },
+        { label: "Market feed live", detail: "BTC volatility +18%", className: "border-amber-200 bg-amber-50 text-amber-700" },
         { label: "Devices connected", detail: "0 sources", className: "border-[#dce6d9] bg-white text-[#657365]" },
         { label: "Personal confidence", detail: "0%", className: "border-[#dce6d9] bg-white text-[#657365]" },
       ];
   const guardianEvidence = hasGuardianContext
     ? [
-        ["Market volatility", "BTC/ETH movement is 18% above the live volatility feed.", "https://www.tradingview.com/symbols/BTCUSD/"],
+        ["Market volatility", "BTC volatility is +18% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
         ["Sleep debt", "Three late nights created 1h 48m of accumulated sleep debt."],
         ["Screen fatigue", "91 minutes of uninterrupted chart and Discord exposure."],
         ["Decision risk", "Delay high-stress trades until after lunch and complete one eye break before the next market session."],
       ]
     : [
-        ["Market volatility", "BTC/ETH volatility is available as a live public market signal before devices are connected.", "https://www.tradingview.com/symbols/BTCUSD/"],
+        ["Market volatility", "BTC volatility is +18% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
         ["Sleep debt", "0 hours. Connect Apple Health, Samsung Health, Google Fit, or Mi Fitness to estimate recovery debt."],
         ["Screen fatigue", "0 minutes. Connect a device or screen context source to unlock fatigue detection."],
         ["Decision risk", "0 personalized risk. Health Trace needs sleep, screen, and journal signals before recommending trading decisions."],
@@ -1516,14 +1533,14 @@ export default function Web3HealthPage() {
   const guardianReadout = hasGuardianContext
     ? { value: "Watch", label: "Attention risk", chart: [42, 48, 56, 64, 72, 68, 62] }
     : { value: "0", label: "Personal signals", chart: [0, 0, 0, 0, 0, 0, 0] };
-  const marketStressScore = isDemoAccount ? "62" : "--";
-  const marketStressLabel = isDemoAccount ? "Elevated, manageable" : "Health context needed";
-  const marketStressCopy = isDemoAccount
+  const marketStressScore = hasLiveHealthContext ? "62" : "--";
+  const marketStressLabel = hasLiveHealthContext ? "Elevated, manageable" : "Health context needed";
+  const marketStressCopy = hasLiveHealthContext
     ? "Trace reads volatility, screen intensity, sleep debt, and body stress as one context layer, then tells you when market behavior is starting to tax recovery."
     : "BTC volatility can be visible immediately, but screen intensity, sleep debt, and body stress need connected health sources before Trace can personalize the readout.";
-  const recoveryScore = isDemoAccount ? "84" : "--";
-  const recoveryTitle = isDemoAccount ? "Recovery is still protected." : "Recovery needs a baseline.";
-  const recoveryCopy = isDemoAccount
+  const recoveryScore = hasLiveHealthContext ? "84" : "--";
+  const recoveryTitle = hasLiveHealthContext ? "Recovery is still protected." : "Recovery needs a baseline.";
+  const recoveryCopy = hasLiveHealthContext
     ? "Sleep debt is present, but your morning movement and HRV trend are keeping the buffer intact. Tonight is about preventing a second-order drop."
     : "This wallet has no sleep, activity, or wearable context yet. Connect a health source to let Trace build recovery intelligence.";
 
@@ -1695,13 +1712,6 @@ export default function Web3HealthPage() {
           }
       : item,
   );
-  const fomoReflectionDone = Boolean(journalSelections.FOMO || journalSelections.FUD || journalSelections["Revenge trade urge"]);
-  const completedProofCount =
-    completedProofActions.length +
-    (eyeBreakCount >= 6 ? 1 : 0) +
-    (fomoReflectionDone ? 1 : 0) +
-    completedMarketActions.length;
-  const proofStreakLabel = isDemoAccount ? "6 days" : completedProofCount > 0 ? "1 day" : "0 days";
   const weeklyRangeLabel = formatGmt8WeekRange();
   const proofActions: ProofAction[] = [
     {
@@ -2774,7 +2784,7 @@ export default function Web3HealthPage() {
                             </div>
                             <div className="space-y-3">
                               {[
-                                ...(isDemoAccount
+                                ...(hasLiveHealthContext
                                   ? [
                                       ["Sleep debt", "1h 48m", "Mild accumulated fatigue"],
                                       ["Deep sleep", "Stable", "No sharp overnight drop"],
@@ -2816,7 +2826,7 @@ export default function Web3HealthPage() {
 
                         <div className="mt-6 grid gap-3">
                           {[
-                            ...(isDemoAccount
+                            ...(hasLiveHealthContext
                               ? [
                                   [
                                     "3:00 PM",
@@ -2877,7 +2887,7 @@ export default function Web3HealthPage() {
                         </div>
 
                         <div className="mt-5 grid grid-cols-2 gap-3">
-                        {(isDemoAccount
+                        {(hasLiveHealthContext
                           ? [
                               ["Recovery forecast", "Better if asleep before midnight"],
                               ["Guardian note", "No urgency. Protect the buffer."],
