@@ -827,10 +827,10 @@ const journalResponseCopy: Record<string, Record<string, { detail: string; actio
 const syncableProofLabels = ["Recovery walk", "Sleep boundary", "Hydration check"];
 
 const rewardMissions = [
-  { label: "Complete 20-20-20 eye break", reward: "+30 HT Points", status: "Ready", icon: Activity },
-  { label: "Log FOMO / FUD check-in", reward: "+45 HT Points", status: "New", icon: MessageCircle },
-  { label: "Take a recovery walk", reward: "+60 HT Points", status: "Suggested", icon: Dumbbell },
-  { label: "Keep midnight boundary", reward: "+90 HT Points", status: "Tonight", icon: Moon },
+  { label: "Complete 20-20-20 eye break", reward: "+30 HT Points", status: "Ready", icon: Activity, targetTab: "Eye Break" },
+  { label: "Log FOMO / FUD check-in", reward: "+45 HT Points", status: "New", icon: MessageCircle, targetTab: "Journal" },
+  { label: "Take a recovery walk", reward: "+60 HT Points", status: "Suggested", icon: Dumbbell, targetTab: "Recovery" },
+  { label: "Keep midnight boundary", reward: "+90 HT Points", status: "Tonight", icon: Moon, targetTab: "Recovery" },
 ];
 
 const healthBadges = [
@@ -1554,6 +1554,7 @@ function MobileTabScreen({
                 <button
                   key={mission.label}
                   type="button"
+                  onClick={() => setActiveTab(mission.targetTab as HealthTab)}
                   className={`flex w-full items-center gap-3 rounded-[1.2rem] p-3 text-left ${isDone ? "bg-[#101510] text-white" : "bg-[#f8fbf6]"}`}
                 >
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-[#e9f9e4] text-[#2f7d3c]">
@@ -4125,10 +4126,12 @@ export default function Web3HealthPage() {
                           const Icon = mission.icon;
                           const isDone = completedRewardMissions.includes(mission.label);
                           return (
-                            <motion.article
+                            <motion.button
+                              type="button"
                               key={mission.label}
+                              onClick={() => setActiveTab(mission.targetTab as HealthTab)}
                               whileHover={{ y: -4 }}
-                              className={`rounded-[1.45rem] border p-5 ${isDone ? "border-[#101510] bg-[#101510] text-white" : "border-[#e1e9df] bg-[#fbfdf9]"}`}
+                              className={`rounded-[1.45rem] border p-5 text-left transition focus:outline-none focus:ring-2 focus:ring-[#9DFF7A]/60 ${isDone ? "border-[#101510] bg-[#101510] text-white" : "border-[#e1e9df] bg-[#fbfdf9] hover:border-[#cfe0cb]"}`}
                             >
                               <div className="mb-5 flex items-start justify-between gap-3">
                                 <div className="flex size-11 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#3a8f4d]">
@@ -4154,7 +4157,7 @@ export default function Web3HealthPage() {
                                 )}
                               </h3>
                               <p className="mt-3 text-sm font-semibold text-[#2f7d3c]">{isDone ? "Reward earned" : mission.reward}</p>
-                            </motion.article>
+                            </motion.button>
                           );
                         })}
                       </div>
