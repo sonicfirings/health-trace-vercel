@@ -1852,6 +1852,14 @@ export default function Web3HealthPage() {
     (total, record) => total + (record.completedProofActions.includes("Sleep boundary") ? 1 : 0),
     0,
   );
+  const weeklyEyeBreakDisplay = Math.max(weeklyEyeBreaks, weeklyEyeBreakTotal, eyeBreakCount);
+  const weeklyFomoReflectionTotal = Object.keys(journalSelections).length > 0 ? 1 : 0;
+  const weeklyStressCheckDisplay = Math.max(weeklyStressChecks, weeklyStressCheckTotal) + weeklyFomoReflectionTotal;
+  const weeklySleepBoundaryDisplay = Math.max(
+    weeklySleepBoundaries,
+    weeklySleepBoundaryTotal,
+    completedProofActions.includes("Sleep boundary") ? 1 : 0,
+  );
   const weeklyProofDayCount = weeklyRecords.filter(
     (record) =>
       record.eyeBreakCount >= 6 ||
@@ -2627,11 +2635,11 @@ export default function Web3HealthPage() {
   ];
   const weeklyReportStats = [
     ["Proof streak", proofStreakLabel],
-    ["Eye breaks", String(isDemoAccount ? 18 : weeklyEyeBreakTotal)],
-    ["Stress checks", String(isDemoAccount ? 9 : weeklyStressCheckTotal)],
+    ["Eye breaks", String(isDemoAccount ? 18 : weeklyEyeBreakDisplay)],
+    ["Stress checks", String(isDemoAccount ? 9 : weeklyStressCheckDisplay)],
     [
       "Sleep boundary",
-      `${isDemoAccount ? 4 : weeklySleepBoundaryTotal} night${(isDemoAccount ? 4 : weeklySleepBoundaryTotal) === 1 ? "" : "s"}`,
+      `${isDemoAccount ? 4 : weeklySleepBoundaryDisplay} night${(isDemoAccount ? 4 : weeklySleepBoundaryDisplay) === 1 ? "" : "s"}`,
     ],
   ];
   const weeklyReportSummary = isDemoAccount
