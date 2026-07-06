@@ -1831,6 +1831,7 @@ export default function Web3HealthPage() {
   const [healthPermissions, setHealthPermissions] = useState<Record<string, string[]>>(emptyHealthPermissions);
   const [badgeHintOpen, setBadgeHintOpen] = useState("");
   const [walletRegistry, setWalletRegistry] = useState<WalletRegistryEntry[]>([]);
+  const [adminWalletToTrack, setAdminWalletToTrack] = useState("");
   const mobilePrimaryNavigation = navigation.slice(0, 8);
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
@@ -2255,6 +2256,30 @@ export default function Web3HealthPage() {
     void scanProviderAccounts();
     readWalletRegistry();
     void loadBackendWalletRegistry();
+  };
+
+  const trackAdminWallet = () => {
+    if (!isAdminWallet) return;
+
+    const wallet = adminWalletToTrack.trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+      setWalletError("Enter a valid 0x wallet address to track.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const existing = getStoredWalletRegistry().find((entry) => entry.wallet.toLowerCase() === wallet.toLowerCase());
+    upsertWalletRegistry({
+      wallet,
+      firstSeen: existing?.firstSeen ?? now,
+      lastSeen: now,
+      displayName: existing?.displayName ?? "",
+      connectedApps: existing?.connectedApps ?? 0,
+      rewardPoints: existing?.rewardPoints ?? 0,
+      resetAt: existing?.resetAt,
+    });
+    setAdminWalletToTrack("");
+    setWalletError("");
   };
 
   const resetWalletProfile = (targetWallet: string) => {
@@ -4437,6 +4462,23 @@ export default function Web3HealthPage() {
                             </p>
                           </div>
                         </div>
+
+                        <div className="mt-4 grid gap-2 rounded-[1.05rem] border border-white/10 bg-white/[0.06] p-3 md:grid-cols-[1fr_auto]">
+                          <input
+                            value={adminWalletToTrack}
+                            onChange={(event) => setAdminWalletToTrack(event.target.value)}
+                            placeholder="Paste test wallet address to track"
+                            className="h-11 rounded-full border border-white/10 bg-black/18 px-4 text-sm text-white outline-none placeholder:text-white/30 focus:border-trace-green/60"
+                          />
+                          <Button
+                            type="button"
+                            onClick={trackAdminWallet}
+                            className="h-11 rounded-full bg-trace-green px-5 text-sm font-semibold text-[#071006] hover:bg-[#a7ff84]"
+                          >
+                            Track wallet
+                          </Button>
+                        </div>
+                        {walletError ? <p className="mt-2 text-xs leading-5 text-rose-200">{walletError}</p> : null}
 
                         <div className="mt-4 grid gap-2">
                           {walletRegistry.length ? (
