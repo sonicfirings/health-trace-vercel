@@ -1888,7 +1888,7 @@ export default function Web3HealthPage() {
     }
 
     if (isFuture) {
-      return { ...day, score: null, sleep: null, market: null };
+      return { ...day, score: 0, sleep: 0, market: 0 };
     }
 
     if (!savedPoint) {
