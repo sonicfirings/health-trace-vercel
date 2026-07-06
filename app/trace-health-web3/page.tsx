@@ -4087,16 +4087,13 @@ export default function Web3HealthPage() {
                         On-chain health tasks
                       </p>
                       <div className="mt-5 grid grid-cols-2 gap-3">
-                        {rewardStats.map(([label, value], index) => (
+                        {rewardStats.map(([label, value]) => (
                           <div
                             key={label}
                             className="relative overflow-hidden rounded-[1.3rem] border border-trace-green/20 bg-[radial-gradient(circle_at_20%_10%,rgba(157,255,122,0.18),transparent_36%),rgba(255,255,255,0.055)] p-4 ring-1 ring-white/5"
                           >
-                            <div className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full border border-trace-green/20 bg-trace-green/10 text-[0.65rem] font-semibold text-trace-green">
-                              {index + 1}
-                            </div>
-                            <p className="pr-8 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/42">{label}</p>
-                            <div className="mt-2 flex items-center gap-2 pr-8">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/42">{label}</p>
+                            <div className="mt-2 flex items-center gap-2">
                               <p className="text-xl font-medium leading-tight">{value}</p>
                               {label === "Badge status" ? (
                                 <button
