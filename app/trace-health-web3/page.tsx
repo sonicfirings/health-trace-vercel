@@ -121,7 +121,7 @@ const formatGmt8WeekRange = () => {
   return `${formatter.format(start)} - ${formatter.format(end)}`;
 };
 const getGmt8CurrentWeekDays = () => {
-  const formatter = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" });
+  const formatter = new Intl.DateTimeFormat("en", { day: "numeric", month: "short", timeZone: "UTC" });
   const start = getGmt8WeekStart();
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(start);
@@ -2475,19 +2475,23 @@ export default function Web3HealthPage() {
                           </div>
                         </div>
 
-                        <div className="mt-4 h-32 overflow-visible rounded-[1.5rem] border border-[#e0e8dd] bg-[#fbfdf9] px-2 py-4 sm:h-40 sm:px-3">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={dashboardTrend} margin={{ left: 0, right: 4, top: 8, bottom: 0 }}>
+                        <div className="mt-4 h-32 overflow-hidden rounded-[1.5rem] border border-[#e0e8dd] bg-[#fbfdf9] px-3 pb-3 pt-2 sm:h-40 sm:px-4">
+                          <div className="mb-1 flex items-center justify-between text-[0.68rem] text-[#7a867a]">
+                            <span>Week</span>
+                            <span>{weeklyRangeLabel}</span>
+                          </div>
+                          <ResponsiveContainer width="100%" height="86%">
+                            <LineChart data={dashboardTrend} margin={{ left: 8, right: 8, top: 6, bottom: 2 }}>
                               <XAxis
                                 dataKey="day"
                                 axisLine={false}
                                 interval={0}
                                 minTickGap={0}
-                                padding={{ left: 0, right: 0 }}
+                                padding={{ left: 8, right: 8 }}
                                 tickLine={false}
-                                tick={{ fill: "#7a867a", fontSize: 12 }}
+                                tick={{ fill: "#7a867a", fontSize: 11 }}
                               />
-                              <YAxis hide domain={[0, 100]} />
+                              <YAxis hide domain={[-12, 100]} />
                               <Tooltip
                                 cursor={{ stroke: "#b7c4b2", strokeDasharray: "4 6" }}
                                 contentStyle={{
