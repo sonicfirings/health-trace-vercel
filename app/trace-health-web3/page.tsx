@@ -82,6 +82,7 @@ const walletProfileStoragePrefix = "health-trace-web3-profile:";
 type WalletProfile = {
   displayName: string;
   healthContextConnectedDate: string;
+  dailyRecords: Record<string, HealthDailyRecord>;
   lastTaskResetDate: string;
   lastWeeklyResetKey: string;
   weeklyEyeBreaks: number;
@@ -100,6 +101,39 @@ type WalletProfile = {
   selectedHealthApp: string;
   connectedHealthApps: string[];
   healthPermissions: Record<string, string[]>;
+};
+
+type HealthDailyRecord = {
+  dateKey: string;
+  score: number;
+  sleep: number;
+  market: number;
+  healthScore: number;
+  healthScoreLabel: string;
+  marketStress: number;
+  recoveryScore: number;
+  marketVolatility: string;
+  sleepDebt: string;
+  screenFatigue: string;
+  screenFatigueLevel: string;
+  bodyStress: string;
+  currentState: string;
+  guardianRisk: string;
+  guardianTitle: string;
+  guardianCopy: string;
+  guardianRecommendation: string;
+  guardianEvidence: [string, string, string?][];
+  guardianProtocol: { title: string; detail: string; targetTab: HealthTab }[];
+  marketStressCopy: string;
+  recoveryTitle: string;
+  recoveryCopy: string;
+  briefItems: { status: string; title: string; detail: string; color: string }[];
+  eyeBreakCount: number;
+  postureResetDone: boolean;
+  completedMarketActions: string[];
+  journalSelections: Record<string, string>;
+  completedProofActions: string[];
+  completedRewardMissions: string[];
 };
 
 const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
@@ -132,6 +166,37 @@ const getGmt8CurrentWeekDays = () => {
     };
   });
 };
+const getWeekDayIndexFromDateKey = (dateKey: string) => {
+  const date = getGmt8DateFromKey(dateKey);
+  const day = date.getUTCDay();
+  return day === 0 ? 6 : day - 1;
+};
+const createDailyRecord = (dateKey: string): HealthDailyRecord => {
+  const dayIndex = getWeekDayIndexFromDateKey(dateKey);
+  const context = weeklyDemoContexts[dayIndex] ?? weeklyDemoContexts[0];
+
+  return {
+    dateKey,
+    ...context,
+    eyeBreakCount: 0,
+    postureResetDone: false,
+    completedMarketActions: [],
+    journalSelections: {},
+    completedProofActions: [],
+    completedRewardMissions: [],
+  };
+};
+const normalizeDailyRecords = (records: Record<string, Partial<HealthDailyRecord>> = {}) =>
+  Object.fromEntries(
+    Object.entries(records).map(([dateKey, record]) => [
+      dateKey,
+      {
+        ...createDailyRecord(record.dateKey ?? dateKey),
+        ...record,
+        dateKey: record.dateKey ?? dateKey,
+      },
+    ]),
+  ) as Record<string, HealthDailyRecord>;
 
 type ProofAction = {
   label: string;
@@ -179,6 +244,312 @@ const recoveryTrend = [
   { day: "Fri", score: 76, sleep: 66, market: 84 },
   { day: "Sat", score: 88, sleep: 82, market: 35 },
   { day: "Today", score: 86, sleep: 79, market: 62 },
+];
+
+const weeklyDemoContexts: Omit<
+  HealthDailyRecord,
+  | "dateKey"
+  | "eyeBreakCount"
+  | "postureResetDone"
+  | "completedMarketActions"
+  | "journalSelections"
+  | "completedProofActions"
+  | "completedRewardMissions"
+>[] = [
+  {
+    score: 86,
+    sleep: 79,
+    market: 62,
+    healthScore: 86,
+    healthScoreLabel: "Stable",
+    marketStress: 62,
+    recoveryScore: 84,
+    marketVolatility: "+18%",
+    sleepDebt: "1h 48m",
+    screenFatigue: "91m",
+    screenFatigueLevel: "High",
+    bodyStress: "Moderate",
+    currentState: "High attention load",
+    guardianRisk: "Watch",
+    guardianTitle: "Today is a high-risk attention day.",
+    guardianCopy:
+      "BTC volatility is elevated, your sleep was below baseline, and your current screen streak crossed your usual stress threshold. Health Trace recommends protecting deep work before markets and avoiding major decisions after midnight.",
+    guardianRecommendation:
+      "Do deep work before checking markets. Take an eye break now, and avoid major decisions after midnight.",
+    guardianEvidence: [
+      ["Market volatility", "BTC volatility is +18% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
+      ["Sleep debt", "Today shows 1h 48m of accumulated sleep debt."],
+      ["Screen fatigue", "91m of uninterrupted chart and Discord exposure."],
+      ["Decision risk", "Delay high-stress trades until after lunch and complete one eye break before the next market session."],
+    ],
+    guardianProtocol: [
+      { title: "Take a 20-20-20 eye break now.", detail: "Your current screen streak crossed 90 minutes. Completing this lowers short-term fatigue risk.", targetTab: "Eye Break" },
+      { title: "Do the next deep-work block before checking markets.", detail: "Trace sees better focus before market/news loops. Finish one protected block first.", targetTab: "Market Stress" },
+      { title: "Use a 10-minute cool-down before high-risk decisions.", detail: "Sleep debt plus volatility increases impulsive decisions. Cool-down creates a decision buffer.", targetTab: "Market Stress" },
+    ],
+    marketStressCopy:
+      "Trace reads volatility, screen intensity, sleep debt, and body stress as one context layer, then tells you when market behavior is starting to tax recovery.",
+    recoveryTitle: "Recovery is still protected.",
+    recoveryCopy:
+      "Sleep debt is present, but your morning movement and HRV trend are keeping the buffer intact. Tonight is about preventing a second-order drop.",
+    briefItems: [
+      { status: "Watch", title: "Market pressure is elevated today.", detail: "Volatility, screen exposure, and resting heart rate are moving together.", color: "bg-amber-300" },
+      { status: "Recovery", title: "Late-night activity is reducing your buffer.", detail: "You were active after midnight on three of the last four nights.", color: "bg-sky-300" },
+      { status: "Protect", title: "Your attention load is high.", detail: "Take an eye break before another long Discord, X, or chart session.", color: "bg-trace-green" },
+    ],
+  },
+  {
+    score: 72,
+    sleep: 58,
+    market: 78,
+    healthScore: 72,
+    healthScoreLabel: "Strained",
+    marketStress: 78,
+    recoveryScore: 68,
+    marketVolatility: "+31%",
+    sleepDebt: "2h 34m",
+    screenFatigue: "2h 10m",
+    screenFatigueLevel: "Very high",
+    bodyStress: "Elevated",
+    currentState: "Recovery buffer thin",
+    guardianRisk: "Elevated",
+    guardianTitle: "Recovery buffer is thin today.",
+    guardianCopy:
+      "BTC volatility is sharper, sleep debt widened overnight, and screen exposure has already crossed two hours. Health Trace recommends watch-only mode until recovery signals settle.",
+    guardianRecommendation:
+      "Use watch-only mode, skip high-risk trades, and set a strict sleep boundary tonight.",
+    guardianEvidence: [
+      ["Market volatility", "BTC volatility is +31% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
+      ["Sleep debt", "Sleep debt increased to 2h 34m after another late session."],
+      ["Screen fatigue", "2h 10m of continuous charts and social feeds pushed fatigue into the red zone."],
+      ["Decision risk", "Avoid new high-conviction decisions until after a recovery walk and one full eye reset."],
+    ],
+    guardianProtocol: [
+      { title: "Switch to watch-only mode for the next session.", detail: "Market volatility is high while recovery is thin. Observe without acting.", targetTab: "Market Stress" },
+      { title: "Take a recovery walk before checking charts again.", detail: "A short walk lowers attention load and gives stress markers time to settle.", targetTab: "Recovery" },
+      { title: "Complete a 20-second eye reset now.", detail: "Screen fatigue crossed two hours and is compounding decision risk.", targetTab: "Eye Break" },
+    ],
+    marketStressCopy:
+      "Today the market layer is loud, but the bigger risk is the stack: low sleep, long screen exposure, and elevated volatility arriving together.",
+    recoveryTitle: "Recovery is fragile.",
+    recoveryCopy:
+      "The buffer is thinner today. Sleep debt and screen fatigue are pulling readiness down, so the best action is to reduce intensity early.",
+    briefItems: [
+      { status: "Elevated", title: "BTC volatility is sharply above baseline.", detail: "Market movement is high enough to increase decision pressure.", color: "bg-rose-300" },
+      { status: "Debt", title: "Sleep debt increased overnight.", detail: "Recovery dropped after another late screen session.", color: "bg-amber-300" },
+      { status: "Action", title: "Watch-only mode is recommended.", detail: "Reduce active decisions until body stress settles.", color: "bg-trace-green" },
+    ],
+  },
+  {
+    score: 79,
+    sleep: 66,
+    market: 69,
+    healthScore: 79,
+    healthScoreLabel: "Rebuilding",
+    marketStress: 69,
+    recoveryScore: 76,
+    marketVolatility: "+22%",
+    sleepDebt: "1h 56m",
+    screenFatigue: "78m",
+    screenFatigueLevel: "Moderate",
+    bodyStress: "Moderate",
+    currentState: "Rebuilding baseline",
+    guardianRisk: "Watch",
+    guardianTitle: "You are rebuilding your buffer.",
+    guardianCopy:
+      "Sleep debt improved from yesterday, but market pressure is still above normal. Health Trace recommends one focused work block before opening charts.",
+    guardianRecommendation:
+      "Protect the first deep-work block, then batch market checks into two windows.",
+    guardianEvidence: [
+      ["Market volatility", "BTC volatility is +22% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
+      ["Sleep debt", "Sleep debt improved to 1h 56m, but it is not fully recovered."],
+      ["Screen fatigue", "78m of screen exposure is manageable if you take a break soon."],
+      ["Decision risk", "Batching checks should keep decision load from rising again."],
+    ],
+    guardianProtocol: [
+      { title: "Finish one protected work block first.", detail: "Your best focus window is before the first chart check.", targetTab: "Market Stress" },
+      { title: "Batch market checks into two windows.", detail: "Fewer context switches help recovery continue improving.", targetTab: "Market Stress" },
+      { title: "Keep caffeine before 3 PM.", detail: "Recovery is rebuilding, so late stimulation is the easiest thing to avoid.", targetTab: "Recovery" },
+    ],
+    marketStressCopy:
+      "Market pressure remains elevated, but your personal stress stack is less severe than yesterday. The task is containment, not shutdown.",
+    recoveryTitle: "Recovery is rebuilding.",
+    recoveryCopy:
+      "Sleep debt has narrowed and screen fatigue is manageable. Keeping stimulation bounded today should improve tomorrow's score.",
+    briefItems: [
+      { status: "Improving", title: "Sleep debt is moving down.", detail: "Recovery has started to rebuild after yesterday's strain.", color: "bg-sky-300" },
+      { status: "Watch", title: "Market pressure remains above normal.", detail: "Volatility is still high enough to trigger repeated checking.", color: "bg-amber-300" },
+      { status: "Focus", title: "Your first work block matters most.", detail: "Protect it before charts and Discord fragment attention.", color: "bg-trace-green" },
+    ],
+  },
+  {
+    score: 83,
+    sleep: 74,
+    market: 55,
+    healthScore: 83,
+    healthScoreLabel: "Balanced",
+    marketStress: 54,
+    recoveryScore: 85,
+    marketVolatility: "+11%",
+    sleepDebt: "1h 08m",
+    screenFatigue: "64m",
+    screenFatigueLevel: "Moderate",
+    bodyStress: "Low",
+    currentState: "Balanced load",
+    guardianRisk: "Calm",
+    guardianTitle: "Your context is stabilizing.",
+    guardianCopy:
+      "Market volatility cooled, recovery improved, and screen fatigue is below your usual risk threshold. Health Trace recommends maintaining the current rhythm.",
+    guardianRecommendation:
+      "Maintain the rhythm: focused work, batched checks, and one short movement break.",
+    guardianEvidence: [
+      ["Market volatility", "BTC volatility is +11% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
+      ["Sleep debt", "Sleep debt is down to 1h 08m."],
+      ["Screen fatigue", "64m of screen exposure is below your usual risk threshold."],
+      ["Decision risk", "No major decision warning. Keep the structure that is working."],
+    ],
+    guardianProtocol: [
+      { title: "Keep chart checks batched.", detail: "The current rhythm is working; do not reopen noisy loops.", targetTab: "Market Stress" },
+      { title: "Take one short movement break.", detail: "Low body stress is worth preserving before afternoon work.", targetTab: "Recovery" },
+      { title: "Complete one eye reset before the next long session.", detail: "Stay ahead of fatigue rather than reacting late.", targetTab: "Eye Break" },
+    ],
+    marketStressCopy:
+      "The market is still moving, but today the personal stress layer is calmer. Trace is keeping the guardrails light.",
+    recoveryTitle: "Recovery is stabilizing.",
+    recoveryCopy:
+      "Sleep debt and body stress are both trending in the right direction. The priority is consistency, not restriction.",
+    briefItems: [
+      { status: "Stable", title: "Recovery is improving.", detail: "Sleep debt is lower and body stress is not elevated.", color: "bg-trace-green" },
+      { status: "Calmer", title: "BTC volatility cooled today.", detail: "Market pressure is less likely to dominate attention.", color: "bg-sky-300" },
+      { status: "Maintain", title: "Keep your current routine.", detail: "Batched checks and breaks are protecting decision quality.", color: "bg-emerald-300" },
+    ],
+  },
+  {
+    score: 68,
+    sleep: 55,
+    market: 84,
+    healthScore: 68,
+    healthScoreLabel: "At risk",
+    marketStress: 84,
+    recoveryScore: 64,
+    marketVolatility: "+39%",
+    sleepDebt: "3h 05m",
+    screenFatigue: "2h 42m",
+    screenFatigueLevel: "Extreme",
+    bodyStress: "Elevated",
+    currentState: "High decision load",
+    guardianRisk: "High",
+    guardianTitle: "Decision risk is high today.",
+    guardianCopy:
+      "BTC volatility spiked while sleep debt and screen fatigue are both elevated. Health Trace recommends avoiding high-stakes actions until recovery is protected.",
+    guardianRecommendation:
+      "No high-risk trades today. Complete eye rest, recovery walk, and a midnight hard stop.",
+    guardianEvidence: [
+      ["Market volatility", "BTC volatility is +39% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
+      ["Sleep debt", "Sleep debt widened to 3h 05m."],
+      ["Screen fatigue", "2h 42m of screen exposure is well beyond your usual risk threshold."],
+      ["Decision risk", "High-risk actions should wait until after recovery improves."],
+    ],
+    guardianProtocol: [
+      { title: "Avoid high-risk trades today.", detail: "The stack is too loaded: volatility, sleep debt, and screen fatigue are all elevated.", targetTab: "Market Stress" },
+      { title: "Do a full eye reset before any new chart session.", detail: "Screen fatigue is now the strongest controllable risk.", targetTab: "Eye Break" },
+      { title: "Set a hard stop before midnight.", detail: "Tonight determines whether tomorrow starts with recovery or more debt.", targetTab: "Recovery" },
+    ],
+    marketStressCopy:
+      "This is the highest-risk day in the week. Trace is not predicting markets; it is protecting the person making decisions.",
+    recoveryTitle: "Recovery is under pressure.",
+    recoveryCopy:
+      "Sleep debt and late screen exposure are now heavy enough to affect tomorrow unless you reduce intensity today.",
+    briefItems: [
+      { status: "High", title: "Decision risk is elevated.", detail: "Volatility, screen fatigue, and sleep debt are stacked together.", color: "bg-rose-300" },
+      { status: "Debt", title: "Sleep debt crossed three hours.", detail: "Recovery is unlikely to rebound without an earlier stop tonight.", color: "bg-amber-300" },
+      { status: "Protect", title: "No high-risk trades recommended.", detail: "Use watch-only mode until recovery improves.", color: "bg-trace-green" },
+    ],
+  },
+  {
+    score: 88,
+    sleep: 84,
+    market: 43,
+    healthScore: 88,
+    healthScoreLabel: "Strong",
+    marketStress: 49,
+    recoveryScore: 88,
+    marketVolatility: "+8%",
+    sleepDebt: "42m",
+    screenFatigue: "62m",
+    screenFatigueLevel: "Low",
+    bodyStress: "Low",
+    currentState: "Strong recovery",
+    guardianRisk: "Calm",
+    guardianTitle: "Recovery is leading today.",
+    guardianCopy:
+      "Sleep debt is low, market pressure cooled, and screen fatigue is controlled. Health Trace recommends using the day for calm execution rather than urgency.",
+    guardianRecommendation:
+      "Use the recovery window for calm work, light movement, and low-noise market checks.",
+    guardianEvidence: [
+      ["Market volatility", "BTC volatility is +8% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
+      ["Sleep debt", "Sleep debt is down to 42m."],
+      ["Screen fatigue", "62m of screen exposure is currently low-risk."],
+      ["Decision risk", "Decision state looks stable if checks stay batched."],
+    ],
+    guardianProtocol: [
+      { title: "Use one calm execution block.", detail: "Recovery is strong enough for focused work without chasing urgency.", targetTab: "Market Stress" },
+      { title: "Keep movement light and consistent.", detail: "Do not turn a good recovery day into another high-load day.", targetTab: "Recovery" },
+      { title: "Preserve low screen fatigue.", detail: "Take an eye reset before fatigue compounds later.", targetTab: "Eye Break" },
+    ],
+    marketStressCopy:
+      "Market pressure is lower today. The opportunity is not to do more; it is to keep decision quality high.",
+    recoveryTitle: "Recovery is strong.",
+    recoveryCopy:
+      "Sleep debt is low and body stress is calm. This is the cleanest recovery window of the week.",
+    briefItems: [
+      { status: "Strong", title: "Recovery is leading today.", detail: "Sleep debt is low and body stress is calm.", color: "bg-trace-green" },
+      { status: "Low", title: "Market pressure cooled.", detail: "BTC movement is less likely to hijack attention.", color: "bg-sky-300" },
+      { status: "Use", title: "This is a calm execution window.", detail: "Do focused work without increasing screen load.", color: "bg-emerald-300" },
+    ],
+  },
+  {
+    score: 90,
+    sleep: 88,
+    market: 38,
+    healthScore: 90,
+    healthScoreLabel: "Excellent",
+    marketStress: 44,
+    recoveryScore: 90,
+    marketVolatility: "+5%",
+    sleepDebt: "36m",
+    screenFatigue: "58m",
+    screenFatigueLevel: "Low",
+    bodyStress: "Low",
+    currentState: "Recovered baseline",
+    guardianRisk: "Clear",
+    guardianTitle: "You are back near baseline.",
+    guardianCopy:
+      "Recovery, sleep debt, and screen fatigue are all back near baseline. Health Trace recommends a normal routine with one light proof action.",
+    guardianRecommendation:
+      "Stay consistent: one healthy proof action, normal work cadence, and no late market loops.",
+    guardianEvidence: [
+      ["Market volatility", "BTC volatility is +5% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
+      ["Sleep debt", "Sleep debt is only 36m."],
+      ["Screen fatigue", "58m of screen exposure is below the alert threshold."],
+      ["Decision risk", "Decision risk is clear if late loops stay closed."],
+    ],
+    guardianProtocol: [
+      { title: "Complete one healthy proof action.", detail: "A light action keeps the streak alive without adding burden.", targetTab: "Proofs" },
+      { title: "Keep market checks lightweight.", detail: "No need for extra restrictions while volatility is low.", targetTab: "Market Stress" },
+      { title: "Protect the recovered baseline tonight.", detail: "Avoid late loops so Monday starts clean.", targetTab: "Recovery" },
+    ],
+    marketStressCopy:
+      "Market stress is low and personal recovery is strong. Trace is showing a green-light day with simple guardrails.",
+    recoveryTitle: "Recovered baseline.",
+    recoveryCopy:
+      "Your recovery context is close to baseline. The best move is to preserve it into the next week.",
+    briefItems: [
+      { status: "Excellent", title: "Web3 health is near baseline.", detail: "Sleep, screen, and market stress are all controlled.", color: "bg-trace-green" },
+      { status: "Clear", title: "Decision risk is low.", detail: "No major alert unless late market loops reopen.", color: "bg-emerald-300" },
+      { status: "Proof", title: "One light action keeps momentum.", detail: "Complete a healthy proof without over-optimizing the day.", color: "bg-sky-300" },
+    ],
+  },
 ];
 
 const homeSignals = [
@@ -758,6 +1129,7 @@ function MobileTabScreen({
   openJournalCheckIn,
   rewardPoints,
   completedRewardMissions,
+  currentDayRecord,
   isDemoAccount,
   proofActions,
   proofStreakLabel,
@@ -791,6 +1163,7 @@ function MobileTabScreen({
   openJournalCheckIn: (label: string) => void;
   rewardPoints: number;
   completedRewardMissions: string[];
+  currentDayRecord: HealthDailyRecord | null;
   isDemoAccount: boolean;
   proofActions: ProofAction[];
   proofStreakLabel: string;
@@ -800,9 +1173,9 @@ function MobileTabScreen({
   syncProofAction: (proof: ProofAction) => void;
 }) {
   const hasMobileGuardianContext = isDemoAccount || connectedHealthApps.length > 0;
-  const mobileGuardianTitle = hasMobileGuardianContext ? "High attention day." : "Market volatility is live.";
-  const mobileGuardianCopy = hasMobileGuardianContext
-    ? "BTC volatility is elevated, sleep is below baseline, and your screen streak crossed your stress threshold."
+  const mobileGuardianTitle = currentDayRecord ? currentDayRecord.guardianTitle : "Market volatility is live.";
+  const mobileGuardianCopy = currentDayRecord
+    ? currentDayRecord.guardianCopy
     : "Connect health apps in Settings to add sleep, screen fatigue, and decision-risk context.";
   const mobileGuardianStatus = hasMobileGuardianContext
     ? [
@@ -811,15 +1184,15 @@ function MobileTabScreen({
         { label: "91%", detail: "Confidence", className: "border-trace-green/30 bg-trace-green/15 text-trace-green" },
       ]
     : [
-        { label: "Market feed", detail: "BTC +18%", className: "border-amber-300/25 bg-amber-300/10 text-white" },
+        { label: "Market feed", detail: `BTC ${currentDayRecord?.marketVolatility ?? "+18%"}`, className: "border-amber-300/25 bg-amber-300/10 text-white" },
         { label: "Devices", detail: "0 sources", className: "border-white/10 bg-white/[0.06] text-white" },
         { label: "Personal", detail: "0%", className: "border-white/10 bg-white/[0.06] text-white" },
       ];
   const mobileMarketStats = hasMobileGuardianContext
     ? [
-        ["Volatility", "+18%"],
-        ["Screen load", "6h 14m"],
-        ["Body stress", "Moderate"],
+        ["Volatility", currentDayRecord?.marketVolatility ?? "+18%"],
+        ["Screen load", currentDayRecord?.screenFatigue ?? "0m"],
+        ["Body stress", currentDayRecord?.bodyStress ?? "Moderate"],
       ]
     : [
         ["Volatility", "+18%"],
@@ -828,8 +1201,8 @@ function MobileTabScreen({
       ];
   const mobileRecoveryStats = hasMobileGuardianContext
     ? [
-        ["Sleep debt", "1h 48m"],
-        ["Deep sleep", "Stable"],
+        ["Sleep debt", currentDayRecord?.sleepDebt ?? "0h"],
+        ["Recovery", currentDayRecord ? String(currentDayRecord.recoveryScore) : "--"],
         ["Wind-down", "Due"],
       ]
     : [
@@ -859,7 +1232,7 @@ function MobileTabScreen({
           <p className="text-sm font-medium text-[#172117]">Recommended protocol</p>
           <div className="mt-3 space-y-2">
             {[
-              ...guardianProtocolActions,
+              ...(currentDayRecord?.guardianProtocol ?? guardianProtocolActions),
             ].map((item, index) => {
               return (
                 <button
@@ -1439,6 +1812,7 @@ export default function Web3HealthPage() {
   const [selectedHealthApp, setSelectedHealthApp] = useState(healthApps[0].label);
   const [connectedHealthApps, setConnectedHealthApps] = useState<string[]>([]);
   const [healthContextConnectedDate, setHealthContextConnectedDate] = useState("");
+  const [dailyRecords, setDailyRecords] = useState<Record<string, HealthDailyRecord>>({});
   const [pendingDisconnectApp, setPendingDisconnectApp] = useState("");
   const [healthPermissions, setHealthPermissions] = useState<Record<string, string[]>>(emptyHealthPermissions);
   const [badgeHintOpen, setBadgeHintOpen] = useState("");
@@ -1449,18 +1823,43 @@ export default function Web3HealthPage() {
   const hasLiveHealthContext = isDemoAccount || connectedHealthApps.length > 0;
   const hasGuardianContext = hasLiveHealthContext;
   const profileName = displayName.trim() || "there";
+  const currentWeekDays = getGmt8CurrentWeekDays();
+  const todayKey = getGmt8DateKey();
+  const weeklyRecords = currentWeekDays
+    .map((day) => dailyRecords[day.dateKey])
+    .filter((record): record is HealthDailyRecord => Boolean(record));
+  const weeklyEyeBreakTotal = weeklyRecords.reduce((total, record) => total + record.eyeBreakCount, 0);
+  const weeklyStressCheckTotal = weeklyRecords.reduce((total, record) => total + record.completedMarketActions.length, 0);
+  const weeklySleepBoundaryTotal = weeklyRecords.reduce(
+    (total, record) => total + (record.completedProofActions.includes("Sleep boundary") ? 1 : 0),
+    0,
+  );
+  const weeklyProofDayCount = weeklyRecords.filter(
+    (record) =>
+      record.eyeBreakCount >= 6 ||
+      record.completedMarketActions.length > 0 ||
+      record.completedProofActions.length > 0 ||
+      Object.keys(record.journalSelections).length > 0,
+  ).length;
   const fomoReflectionDone = Boolean(journalSelections.FOMO || journalSelections.FUD || journalSelections["Revenge trade urge"]);
   const completedProofCount =
     completedProofActions.length +
     (eyeBreakCount >= 6 ? 1 : 0) +
     (fomoReflectionDone ? 1 : 0) +
     completedMarketActions.length;
-  const proofStreakLabel = isDemoAccount ? "6 days" : completedProofCount > 0 ? "1 day" : "0 days";
-  const currentWeekDays = getGmt8CurrentWeekDays();
-  const todayKey = getGmt8DateKey();
+  const proofStreakLabel = isDemoAccount
+    ? "6 days"
+    : weeklyProofDayCount > 0
+      ? `${weeklyProofDayCount} day${weeklyProofDayCount === 1 ? "" : "s"}`
+      : "0 days";
+  const currentDayRecord = hasLiveHealthContext
+    ? dailyRecords[todayKey]
+      ? { ...createDailyRecord(todayKey), ...dailyRecords[todayKey] }
+      : createDailyRecord(todayKey)
+    : null;
   const chartConnectedDate = isDemoAccount ? getGmt8WeekKey() : healthContextConnectedDate;
   const dashboardTrend = currentWeekDays.map((day, index) => {
-    const demoPoint = recoveryTrend[index] ?? recoveryTrend[recoveryTrend.length - 1];
+    const savedPoint = day.dateKey === todayKey && currentDayRecord ? currentDayRecord : dailyRecords[day.dateKey];
     const isFuture = day.dateKey > todayKey;
     const isBeforeConnected = !chartConnectedDate || day.dateKey < chartConnectedDate;
 
@@ -1472,40 +1871,73 @@ export default function Web3HealthPage() {
       return { ...day, score: null, sleep: null, market: null };
     }
 
+    if (!savedPoint) {
+      return { ...day, score: 0, sleep: 0, market: 0 };
+    }
+
     return {
       ...day,
-      score: demoPoint.score,
-      sleep: demoPoint.sleep,
-      market: demoPoint.market,
+      score: savedPoint.score,
+      sleep: savedPoint.sleep,
+      market: savedPoint.market,
     };
   });
-  const dashboardSignals = (hasLiveHealthContext ? homeSignals : emptyHomeSignals).map((signal) =>
-    signal.label === "Proof Streak"
-      ? {
-          ...signal,
-          value: proofStreakLabel,
-          detail: completedProofCount > 0 || isDemoAccount ? "Healthy actions privately verified" : "No healthy actions verified yet",
-          chart: completedProofCount > 0 || isDemoAccount ? signal.chart : [0, 0, 0, 0, 0, 0, 0],
-        }
-      : signal,
-  );
-  const dashboardBriefItems = hasLiveHealthContext ? briefItems : emptyBriefItems;
-  const healthScore = hasLiveHealthContext ? "86" : "0";
-  const healthScoreLabel = hasLiveHealthContext ? "Stable" : "No data";
-  const currentState = hasLiveHealthContext ? "High attention load" : "No baseline yet";
+  const dashboardSignals = (hasLiveHealthContext ? homeSignals : emptyHomeSignals).map((signal) => {
+    if (signal.label === "Web3 Health Score") {
+      return {
+        ...signal,
+        value: currentDayRecord ? String(currentDayRecord.healthScore) : "0",
+        detail: currentDayRecord ? "Synced from today's health context" : "Connect health apps to build a baseline",
+      };
+    }
+    if (signal.label === "Market Stress") {
+      return {
+        ...signal,
+        value: currentDayRecord ? String(currentDayRecord.marketStress) : "--",
+        detail: currentDayRecord ? `BTC volatility is ${currentDayRecord.marketVolatility} vs baseline` : "No source connected yet",
+      };
+    }
+    if (signal.label === "Sleep Debt") {
+      return {
+        ...signal,
+        value: currentDayRecord ? currentDayRecord.sleepDebt : "--",
+        detail: currentDayRecord ? "Synced from recovery context" : "No source connected yet",
+      };
+    }
+    if (signal.label === "Screen Fatigue") {
+      return {
+        ...signal,
+        value: currentDayRecord ? currentDayRecord.screenFatigueLevel : "--",
+        detail: currentDayRecord ? `${currentDayRecord.screenFatigue} without a proper eye break` : "No source connected yet",
+      };
+    }
+    if (signal.label === "Proof Streak") {
+      return {
+        ...signal,
+        value: proofStreakLabel,
+        detail: completedProofCount > 0 || isDemoAccount ? "Healthy actions privately verified" : "No healthy actions verified yet",
+        chart: completedProofCount > 0 || isDemoAccount ? signal.chart : [0, 0, 0, 0, 0, 0, 0],
+      };
+    }
+    return signal;
+  });
+  const dashboardBriefItems = currentDayRecord ? currentDayRecord.briefItems : emptyBriefItems;
+  const healthScore = currentDayRecord ? String(currentDayRecord.healthScore) : "0";
+  const healthScoreLabel = currentDayRecord ? currentDayRecord.healthScoreLabel : "No data";
+  const currentState = currentDayRecord ? currentDayRecord.currentState : "No baseline yet";
   const mobileSummaryStats = hasLiveHealthContext
     ? [
-        ["Stress", "62", "Watch"],
-        ["Sleep", "1h 48m", "Debt"],
-        ["Screen", "91m", "Break"],
+        ["Stress", String(currentDayRecord?.marketStress ?? 0), currentDayRecord?.guardianRisk ?? "Watch"],
+        ["Sleep", currentDayRecord?.sleepDebt ?? "0h", "Debt"],
+        ["Screen", currentDayRecord?.screenFatigue ?? "0m", "Break"],
       ]
     : [
         ["Apps", "0", "Connect"],
         ["Score", "0", "No data"],
         ["Proofs", "0", "Start"],
       ];
-  const guardianRecommendation = hasLiveHealthContext
-    ? "Do deep work before checking markets. Take an eye break now, and avoid major decisions after midnight."
+  const guardianRecommendation = currentDayRecord
+    ? currentDayRecord.guardianRecommendation
     : "Connect a health source in Settings to start building your private baseline.";
   const rewardStats = [
     ["HT Points", rewardPoints.toLocaleString()],
@@ -1517,7 +1949,15 @@ export default function Web3HealthPage() {
     ? healthBadges
     : healthBadges.map((badge) => ({ ...badge, status: "NOT READY" }));
   const dashboardMarketDrivers = hasLiveHealthContext
-    ? marketDrivers
+    ? marketDrivers.map((driver) => {
+        if (driver.label === "Screen exposure") {
+          return { ...driver, value: currentDayRecord?.screenFatigue ?? "0m", note: "X, Discord, charts" };
+        }
+        if (driver.label === "Body stress") {
+          return { ...driver, value: currentDayRecord?.bodyStress ?? "Moderate", note: "HRV recovery still acceptable" };
+        }
+        return { ...driver, value: currentDayRecord?.marketVolatility ?? "+18%", note: "Above 7-day baseline" };
+      })
     : marketDrivers.map((driver) =>
         driver.label === "BTC volatility"
           ? driver
@@ -1529,18 +1969,22 @@ export default function Web3HealthPage() {
             },
       );
   const dashboardRecoveryRows = hasLiveHealthContext
-    ? recoveryRows
+    ? recoveryRows.map(([label, value, detail]) => {
+        if (label === "Sleep debt") return [label, currentDayRecord?.sleepDebt ?? value, "Reduce intense work after 11 PM"];
+        if (label === "Builder load") return [label, currentDayRecord?.currentState.includes("High") ? "High" : "Moderate", detail];
+        return [label, value, detail];
+      })
     : [
         ["Midnight activity", "--", "Connect sleep/activity data"],
         ["Sleep debt", "--", "Connect a sleep source"],
         ["Caffeine window", "--", "No journal baseline yet"],
         ["Builder load", "--", "No activity context yet"],
       ];
-  const guardianTitle = hasGuardianContext
-    ? "Today is a high-risk attention day."
+  const guardianTitle = currentDayRecord
+    ? currentDayRecord.guardianTitle
     : "Market volatility is live. Personal health context is not connected.";
-  const guardianCopy = hasGuardianContext
-    ? "BTC volatility is elevated, your sleep was below baseline, and your current screen streak crossed your usual stress threshold. Health Trace recommends protecting deep work before markets and avoiding major decisions after midnight."
+  const guardianCopy = currentDayRecord
+    ? currentDayRecord.guardianCopy
     : "Health Trace can always read the public market-volatility layer. Connect a health device to add sleep, screen fatigue, and decision-risk context.";
   const guardianPills = hasGuardianContext
     ? [
@@ -1549,17 +1993,12 @@ export default function Web3HealthPage() {
         { label: "91% confidence", detail: "Strong signal match", className: "border-[#9DFF7A]/50 bg-[#ecffe6] text-[#2f7d3c]" },
       ]
     : [
-        { label: "Market feed live", detail: "BTC volatility +18%", className: "border-amber-200 bg-amber-50 text-amber-700" },
+        { label: "Market feed live", detail: `BTC volatility ${currentDayRecord?.marketVolatility ?? "+18%"}`, className: "border-amber-200 bg-amber-50 text-amber-700" },
         { label: "Devices connected", detail: "0 sources", className: "border-[#dce6d9] bg-white text-[#657365]" },
         { label: "Personal confidence", detail: "0%", className: "border-[#dce6d9] bg-white text-[#657365]" },
       ];
-  const guardianEvidence = hasGuardianContext
-    ? [
-        ["Market volatility", "BTC volatility is +18% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
-        ["Sleep debt", "Three late nights created 1h 48m of accumulated sleep debt."],
-        ["Screen fatigue", "91 minutes of uninterrupted chart and Discord exposure."],
-        ["Decision risk", "Delay high-stress trades until after lunch and complete one eye break before the next market session."],
-      ]
+  const guardianEvidence = currentDayRecord
+    ? currentDayRecord.guardianEvidence
     : [
         ["Market volatility", "BTC volatility is +18% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
         ["Sleep debt", "0 hours. Connect Apple Health, Samsung Health, Google Fit, or Mi Fitness to estimate recovery debt."],
@@ -1567,17 +2006,18 @@ export default function Web3HealthPage() {
         ["Decision risk", "0 personalized risk. Health Trace needs sleep, screen, and journal signals before recommending trading decisions."],
       ];
   const guardianReadout = hasGuardianContext
-    ? { value: "Watch", label: "Attention risk", chart: [42, 48, 56, 64, 72, 68, 62] }
+    ? { value: currentDayRecord?.guardianRisk ?? "Watch", label: "Attention risk", chart: [42, 48, 56, 64, 72, 68, currentDayRecord?.marketStress ?? 62] }
     : { value: "0", label: "Personal signals", chart: [0, 0, 0, 0, 0, 0, 0] };
-  const marketStressScore = hasLiveHealthContext ? "62" : "--";
+  const marketStressScore = currentDayRecord ? String(currentDayRecord.marketStress) : "--";
   const marketStressLabel = hasLiveHealthContext ? "Elevated, manageable" : "Health context needed";
-  const marketStressCopy = hasLiveHealthContext
-    ? "Trace reads volatility, screen intensity, sleep debt, and body stress as one context layer, then tells you when market behavior is starting to tax recovery."
+  const dailyGuardianProtocol = currentDayRecord?.guardianProtocol ?? guardianProtocolActions;
+  const marketStressCopy = currentDayRecord
+    ? currentDayRecord.marketStressCopy
     : "BTC volatility can be visible immediately, but screen intensity, sleep debt, and body stress need connected health sources before Trace can personalize the readout.";
-  const recoveryScore = hasLiveHealthContext ? "84" : "--";
-  const recoveryTitle = hasLiveHealthContext ? "Recovery is still protected." : "Recovery needs a baseline.";
-  const recoveryCopy = hasLiveHealthContext
-    ? "Sleep debt is present, but your morning movement and HRV trend are keeping the buffer intact. Tonight is about preventing a second-order drop."
+  const recoveryScore = currentDayRecord ? String(currentDayRecord.recoveryScore) : "--";
+  const recoveryTitle = currentDayRecord ? currentDayRecord.recoveryTitle : "Recovery needs a baseline.";
+  const recoveryCopy = currentDayRecord
+    ? currentDayRecord.recoveryCopy
     : "This wallet has no sleep, activity, or wearable context yet. Connect a health source to let Trace build recovery intelligence.";
 
   useEffect(() => {
@@ -1617,6 +2057,12 @@ export default function Web3HealthPage() {
     const weekKey = getGmt8WeekKey();
 
     if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
+      const demoTodayRecord = {
+        ...createDailyRecord(todayKey),
+        eyeBreakCount: 2,
+        postureResetDone: true,
+        completedProofActions: syncableProofLabels,
+      };
       setDisplayName("Mervyn");
       setPendingDisplayName("Mervyn");
       setEyeBreakCount(2);
@@ -1626,6 +2072,7 @@ export default function Web3HealthPage() {
       setRewardPoints(1280);
       setConnectedHealthApps(demoConnectedHealthApps);
       setHealthContextConnectedDate(getGmt8WeekKey());
+      setDailyRecords({ [todayKey]: demoTodayRecord });
       setHealthPermissions(demoHealthPermissions);
       setCompletedProofActions(syncableProofLabels);
       hydratedWalletRef.current = normalizedWallet;
@@ -1647,6 +2094,7 @@ export default function Web3HealthPage() {
         setRewardPoints(profile.rewardPoints ?? 0);
         setConnectedHealthApps(profile.connectedHealthApps ?? []);
         setHealthContextConnectedDate(profile.healthContextConnectedDate ?? "");
+        setDailyRecords(normalizeDailyRecords(profile.dailyRecords ?? {}));
         setHealthPermissions(profile.healthPermissions ?? emptyHealthPermissions);
         setCompletedRewardMissions(shouldResetDailyTasks ? [] : profile.completedRewardMissions ?? []);
         setCompletedProofActions(shouldResetDailyTasks ? [] : profile.completedProofActions ?? []);
@@ -1673,6 +2121,7 @@ export default function Web3HealthPage() {
     setRewardPoints(0);
     setConnectedHealthApps([]);
     setHealthContextConnectedDate("");
+    setDailyRecords({});
     setHealthPermissions(emptyHealthPermissions);
     setCompletedRewardMissions([]);
     setCompletedProofActions([]);
@@ -1694,6 +2143,7 @@ export default function Web3HealthPage() {
     const profile: WalletProfile = {
       displayName,
       healthContextConnectedDate,
+      dailyRecords,
       lastTaskResetDate: getGmt8DateKey(),
       lastWeeklyResetKey: getGmt8WeekKey(),
       weeklyEyeBreaks,
@@ -1721,6 +2171,7 @@ export default function Web3HealthPage() {
     completedProofActions,
     completedRewardMissions,
     connectedHealthApps,
+    dailyRecords,
     displayName,
     eyeBreakCount,
     eyeResetCooldownSeconds,
@@ -1737,6 +2188,17 @@ export default function Web3HealthPage() {
     weeklySleepBoundaries,
     weeklyStressChecks,
   ]);
+
+  useEffect(() => {
+    if (!walletAddress || !hasLiveHealthContext || dailyRecords[todayKey]) {
+      return;
+    }
+
+    setDailyRecords((current) => ({
+      ...current,
+      [todayKey]: createDailyRecord(todayKey),
+    }));
+  }, [dailyRecords, hasLiveHealthContext, todayKey, walletAddress]);
 
   const eyeBreakMetrics = eyeBreaks.map((item) =>
     item.label === "20-20-20 breaks"
@@ -1806,9 +2268,12 @@ export default function Web3HealthPage() {
   ];
   const weeklyReportStats = [
     ["Proof streak", proofStreakLabel],
-    ["Eye breaks", String(weeklyEyeBreaks)],
-    ["Stress checks", String(weeklyStressChecks)],
-    ["Sleep boundary", `${weeklySleepBoundaries} night${weeklySleepBoundaries === 1 ? "" : "s"}`],
+    ["Eye breaks", String(isDemoAccount ? 18 : weeklyEyeBreakTotal)],
+    ["Stress checks", String(isDemoAccount ? 9 : weeklyStressCheckTotal)],
+    [
+      "Sleep boundary",
+      `${isDemoAccount ? 4 : weeklySleepBoundaryTotal} night${(isDemoAccount ? 4 : weeklySleepBoundaryTotal) === 1 ? "" : "s"}`,
+    ],
   ];
   const weeklyReportSummary = isDemoAccount
     ? weeklyReport.summary
@@ -1820,6 +2285,11 @@ export default function Web3HealthPage() {
     setEyeBreakCount((current) => {
       if (current >= 6) return current;
       setWeeklyEyeBreaks((weekly) => weekly + 1);
+      updateTodayRecord((record) => ({
+        ...record,
+        eyeBreakCount: Math.min(6, record.eyeBreakCount + 1),
+        postureResetDone: true,
+      }));
       return current + 1;
     });
     setIsEyeResetOnCooldown(true);
@@ -1847,7 +2317,24 @@ export default function Web3HealthPage() {
     setCompletedRewardMissions((current) => {
       if (current.includes(mission)) return current;
       setRewardPoints((pointsCurrent) => pointsCurrent + points);
+      updateTodayRecord((record) => ({
+        ...record,
+        completedRewardMissions: record.completedRewardMissions.includes(mission)
+          ? record.completedRewardMissions
+          : [...record.completedRewardMissions, mission],
+      }));
       return [...current, mission];
+    });
+  };
+
+  const updateTodayRecord = (updater: (record: HealthDailyRecord) => HealthDailyRecord) => {
+    if (!hasLiveHealthContext) return;
+    setDailyRecords((current) => {
+      const existing = current[todayKey] ?? createDailyRecord(todayKey);
+      return {
+        ...current,
+        [todayKey]: updater(existing),
+      };
     });
   };
 
@@ -1862,6 +2349,12 @@ export default function Web3HealthPage() {
     setSyncingProofAction(proof.label);
     window.setTimeout(() => {
       setCompletedProofActions((current) => (current.includes(proof.label) ? current : [...current, proof.label]));
+      updateTodayRecord((record) => ({
+        ...record,
+        completedProofActions: record.completedProofActions.includes(proof.label)
+          ? record.completedProofActions
+          : [...record.completedProofActions, proof.label],
+      }));
       if (proof.label === "Recovery walk") {
         completeRewardMission("Take a recovery walk", 60);
       }
@@ -1888,6 +2381,15 @@ export default function Web3HealthPage() {
       setWeeklyStressChecks((weekly) => weekly + 1);
       return [...current, action];
     });
+    updateTodayRecord((record) => {
+      const hasAction = record.completedMarketActions.includes(action);
+      return {
+        ...record,
+        completedMarketActions: hasAction
+          ? record.completedMarketActions.filter((item) => item !== action)
+          : [...record.completedMarketActions, action],
+      };
+    });
   };
 
   const openJournalCheckIn = (label: string) => {
@@ -1897,6 +2399,10 @@ export default function Web3HealthPage() {
   const selectJournalLevel = (level: string) => {
     if (!pendingJournalCheckIn) return;
     setJournalSelections((current) => ({ ...current, [pendingJournalCheckIn]: level }));
+    updateTodayRecord((record) => ({
+      ...record,
+      journalSelections: { ...record.journalSelections, [pendingJournalCheckIn]: level },
+    }));
     completeRewardMission("Log FOMO / FUD check-in", 45);
     setPendingJournalCheckIn("");
   };
@@ -1943,6 +2449,14 @@ export default function Web3HealthPage() {
 
   const connectHealthApp = (app: string) => {
     setHealthContextConnectedDate((current) => current || getGmt8DateKey());
+    setDailyRecords((current) =>
+      current[todayKey]
+        ? current
+        : {
+            ...current,
+            [todayKey]: createDailyRecord(todayKey),
+          },
+    );
     setConnectedHealthApps((current) => (current.includes(app) ? current : [...current, app]));
     setHealthPermissions((current) => ({
       ...current,
@@ -2289,6 +2803,7 @@ export default function Web3HealthPage() {
                     openJournalCheckIn={openJournalCheckIn}
                     rewardPoints={rewardPoints}
                     completedRewardMissions={completedRewardMissions}
+                    currentDayRecord={currentDayRecord}
                     isDemoAccount={isDemoAccount}
                     proofActions={proofActions}
                     proofStreakLabel={proofStreakLabel}
@@ -2646,7 +3161,7 @@ export default function Web3HealthPage() {
                                 Daily guardian actions. Tap each item when complete so Trace can update your context.
                               </p>
                               <div className="mt-5 space-y-3">
-                                {guardianProtocolActions.map((action, index) => {
+                                {dailyGuardianProtocol.map((action, index) => {
                                   return (
                                   <button
                                     key={action.title}
