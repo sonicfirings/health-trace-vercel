@@ -78,6 +78,17 @@ const healthTabs = navigation.map((item) => item.label);
 const savedContextWalletAddress = "0xEf6fdfe87081da6acC6E4755d095b8C23568577F";
 const walletStorageKey = "health-trace-web3-wallet";
 const walletProfileStoragePrefix = "health-trace-web3-profile:";
+const walletRegistryStorageKey = "health-trace-web3-wallet-registry";
+
+type WalletRegistryEntry = {
+  wallet: string;
+  firstSeen: string;
+  lastSeen: string;
+  displayName: string;
+  connectedApps: number;
+  rewardPoints: number;
+  resetAt?: string;
+};
 
 type WalletProfile = {
   displayName: string;
@@ -1816,10 +1827,12 @@ export default function Web3HealthPage() {
   const [pendingDisconnectApp, setPendingDisconnectApp] = useState("");
   const [healthPermissions, setHealthPermissions] = useState<Record<string, string[]>>(emptyHealthPermissions);
   const [badgeHintOpen, setBadgeHintOpen] = useState("");
+  const [walletRegistry, setWalletRegistry] = useState<WalletRegistryEntry[]>([]);
   const mobilePrimaryNavigation = navigation.slice(0, 8);
   const mobileOverflowNavigation = navigation.slice(8);
   const isMobileOverflowActive = mobileOverflowNavigation.some((item) => item.label === activeTab);
   const isDemoAccount = walletAddress.toLowerCase() === savedContextWalletAddress.toLowerCase();
+  const isAdminWallet = isDemoAccount;
   const hasLiveHealthContext = isDemoAccount || connectedHealthApps.length > 0;
   const hasGuardianContext = hasLiveHealthContext;
   const profileName = displayName.trim() || "there";
@@ -2029,6 +2042,82 @@ export default function Web3HealthPage() {
     ? currentDayRecord.recoveryCopy
     : "This wallet has no sleep, activity, or wearable context yet. Connect a health source to let Trace build recovery intelligence.";
 
+  const saveWalletRegistry = (entries: WalletRegistryEntry[]) => {
+    const normalized = entries
+      .reduce<WalletRegistryEntry[]>((list, entry) => {
+        const existingIndex = list.findIndex((item) => item.wallet.toLowerCase() === entry.wallet.toLowerCase());
+        if (existingIndex >= 0) {
+          list[existingIndex] = entry;
+          return list;
+        }
+        return [...list, entry];
+      }, [])
+      .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+
+    setWalletRegistry(normalized);
+    window.localStorage.setItem(walletRegistryStorageKey, JSON.stringify(normalized));
+  };
+
+  const readWalletRegistry = () => {
+    let storedRegistry: WalletRegistryEntry[] = [];
+    try {
+      storedRegistry = JSON.parse(window.localStorage.getItem(walletRegistryStorageKey) ?? "[]") as WalletRegistryEntry[];
+    } catch {
+      storedRegistry = [];
+    }
+
+    const profileEntries = Object.keys(window.localStorage)
+      .filter((key) => key.startsWith(walletProfileStoragePrefix))
+      .map((key) => {
+        const wallet = key.replace(walletProfileStoragePrefix, "");
+        let profile: Partial<WalletProfile> = {};
+        try {
+          profile = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Partial<WalletProfile>;
+        } catch {
+          profile = {};
+        }
+        const existing = storedRegistry.find((entry) => entry.wallet.toLowerCase() === wallet.toLowerCase());
+        return {
+          wallet,
+          firstSeen: existing?.firstSeen ?? profile.lastTaskResetDate ?? getGmt8DateKey(),
+          lastSeen: existing?.lastSeen ?? profile.lastTaskResetDate ?? getGmt8DateKey(),
+          displayName: existing?.displayName ?? profile.displayName ?? "",
+          connectedApps: profile.connectedHealthApps?.length ?? existing?.connectedApps ?? 0,
+          rewardPoints: profile.rewardPoints ?? existing?.rewardPoints ?? 0,
+          resetAt: existing?.resetAt,
+        };
+      });
+
+    saveWalletRegistry([...storedRegistry, ...profileEntries]);
+  };
+
+  const resetWalletProfile = (targetWallet: string) => {
+    if (!isAdminWallet) return;
+
+    const normalizedTarget = targetWallet.toLowerCase();
+    if (normalizedTarget === savedContextWalletAddress.toLowerCase()) {
+      setWalletError("Admin wallet cannot be reset from the registry.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    window.localStorage.removeItem(getWalletProfileKey(targetWallet));
+    saveWalletRegistry(
+      walletRegistry.map((entry) =>
+        entry.wallet.toLowerCase() === normalizedTarget
+          ? {
+              ...entry,
+              displayName: "",
+              connectedApps: 0,
+              rewardPoints: 0,
+              resetAt: now,
+              lastSeen: now,
+            }
+          : entry,
+      ),
+    );
+  };
+
   useEffect(() => {
     const updateSyncedAt = () => {
       setSyncedAt(new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()));
@@ -2052,6 +2141,29 @@ export default function Web3HealthPage() {
       setWalletAddress(storedWallet);
     }
   }, []);
+
+  useEffect(() => {
+    readWalletRegistry();
+  }, []);
+
+  useEffect(() => {
+    if (!walletAddress) return;
+
+    const now = new Date().toISOString();
+    const existing = walletRegistry.find((entry) => entry.wallet.toLowerCase() === walletAddress.toLowerCase());
+    saveWalletRegistry([
+      ...walletRegistry.filter((entry) => entry.wallet.toLowerCase() !== walletAddress.toLowerCase()),
+      {
+        wallet: walletAddress,
+        firstSeen: existing?.firstSeen ?? now,
+        lastSeen: now,
+        displayName,
+        connectedApps: connectedHealthApps.length,
+        rewardPoints,
+        resetAt: existing?.resetAt,
+      },
+    ]);
+  }, [connectedHealthApps.length, displayName, rewardPoints, walletAddress]);
 
   useEffect(() => {
     if (!walletAddress) {
@@ -2103,14 +2215,54 @@ export default function Web3HealthPage() {
         setRewardPoints(profile.rewardPoints ?? 0);
         setConnectedHealthApps(profile.connectedHealthApps ?? []);
         setHealthContextConnectedDate(profile.healthContextConnectedDate ?? "");
-        setDailyRecords(normalizeDailyRecords(profile.dailyRecords ?? {}));
+        const normalizedRecords = normalizeDailyRecords(profile.dailyRecords ?? {});
+        const restoredEyeBreakCount = shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0;
+        const restoredProofActions = shouldResetDailyTasks ? [] : profile.completedProofActions ?? [];
+        const restoredRewardMissions = shouldResetDailyTasks ? [] : profile.completedRewardMissions ?? [];
+        const restoredMarketActions = shouldResetDailyTasks ? [] : profile.completedMarketActions ?? [];
+        const restoredJournalSelections = shouldResetDailyTasks ? {} : profile.journalSelections ?? {};
+        const restoredPostureResetDone = shouldResetDailyTasks ? false : profile.postureResetDone ?? false;
+        const existingTodayRecord = normalizedRecords[todayKey];
+        const shouldMergeTodayState =
+          !shouldResetDailyTasks &&
+          (restoredEyeBreakCount > 0 ||
+            restoredProofActions.length > 0 ||
+            restoredRewardMissions.length > 0 ||
+            restoredMarketActions.length > 0 ||
+            Object.keys(restoredJournalSelections).length > 0 ||
+            restoredPostureResetDone);
+        const mergedDailyRecords =
+          shouldMergeTodayState
+            ? {
+                ...normalizedRecords,
+                [todayKey]: {
+                  ...(existingTodayRecord ?? createDailyRecord(todayKey)),
+                  eyeBreakCount: Math.max(existingTodayRecord?.eyeBreakCount ?? 0, restoredEyeBreakCount),
+                  postureResetDone: Boolean(existingTodayRecord?.postureResetDone || restoredPostureResetDone),
+                  completedProofActions: Array.from(
+                    new Set([...(existingTodayRecord?.completedProofActions ?? []), ...restoredProofActions]),
+                  ),
+                  completedRewardMissions: Array.from(
+                    new Set([...(existingTodayRecord?.completedRewardMissions ?? []), ...restoredRewardMissions]),
+                  ),
+                  completedMarketActions: Array.from(
+                    new Set([...(existingTodayRecord?.completedMarketActions ?? []), ...restoredMarketActions]),
+                  ),
+                  journalSelections: {
+                    ...(existingTodayRecord?.journalSelections ?? {}),
+                    ...restoredJournalSelections,
+                  },
+                },
+              }
+            : normalizedRecords;
+        setDailyRecords(mergedDailyRecords);
         setHealthPermissions(profile.healthPermissions ?? emptyHealthPermissions);
-        setCompletedRewardMissions(shouldResetDailyTasks ? [] : profile.completedRewardMissions ?? []);
-        setCompletedProofActions(shouldResetDailyTasks ? [] : profile.completedProofActions ?? []);
+        setCompletedRewardMissions(restoredRewardMissions);
+        setCompletedProofActions(restoredProofActions);
         setCompletedGuardianActions(shouldResetDailyTasks ? [] : profile.completedGuardianActions ?? []);
-        setCompletedMarketActions(shouldResetDailyTasks ? [] : profile.completedMarketActions ?? []);
-        setJournalSelections(shouldResetDailyTasks ? {} : profile.journalSelections ?? {});
-        setPostureResetDone(shouldResetDailyTasks ? false : profile.postureResetDone ?? false);
+        setCompletedMarketActions(restoredMarketActions);
+        setJournalSelections(restoredJournalSelections);
+        setPostureResetDone(restoredPostureResetDone);
         setIsEyeResetOnCooldown(shouldResetDailyTasks ? false : profile.isEyeResetOnCooldown ?? false);
         setEyeResetCooldownSeconds(shouldResetDailyTasks ? 0 : profile.eyeResetCooldownSeconds ?? 0);
         setSelectedHealthApp(profile.selectedHealthApp ?? healthApps[0].label);
@@ -3024,9 +3176,30 @@ export default function Web3HealthPage() {
                                   boxShadow: "0 18px 50px rgba(16,21,16,0.1)",
                                 }}
                               />
-                              <Line type="monotone" dataKey="score" stroke="#3a8f4d" strokeWidth={3} dot={false} />
-                              <Line type="monotone" dataKey="sleep" stroke="#7bb5ff" strokeWidth={2} dot={false} />
-                              <Line type="monotone" dataKey="market" stroke="#efb84f" strokeWidth={2} dot={false} />
+                              <Line
+                                type="monotone"
+                                dataKey="score"
+                                stroke="#3a8f4d"
+                                strokeWidth={3}
+                                dot={{ r: 3, strokeWidth: 0, fill: "#3a8f4d" }}
+                                activeDot={{ r: 5, strokeWidth: 0, fill: "#3a8f4d" }}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="sleep"
+                                stroke="#7bb5ff"
+                                strokeWidth={2}
+                                dot={{ r: 2.8, strokeWidth: 0, fill: "#7bb5ff" }}
+                                activeDot={{ r: 4.5, strokeWidth: 0, fill: "#7bb5ff" }}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="market"
+                                stroke="#efb84f"
+                                strokeWidth={2}
+                                dot={{ r: 2.8, strokeWidth: 0, fill: "#efb84f" }}
+                                activeDot={{ r: 4.5, strokeWidth: 0, fill: "#efb84f" }}
+                              />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
@@ -4040,6 +4213,61 @@ export default function Web3HealthPage() {
                         </div>
                       ))}
                     </div>
+
+                    {isAdminWallet ? (
+                      <div className="mt-3 rounded-[1.35rem] border border-[#101510] bg-[#101510] p-4 text-white shadow-[0_18px_60px_rgba(16,21,16,0.18)]">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-trace-green">
+                              Admin wallet registry
+                            </p>
+                            <p className="mt-1 text-sm text-white/58">
+                              Visible only to {formatWalletAddress(savedContextWalletAddress)}.
+                            </p>
+                          </div>
+                          <p className="rounded-full border border-white/10 bg-white/8 px-3 py-1 text-sm text-white/72">
+                            {walletRegistry.length} wallet{walletRegistry.length === 1 ? "" : "s"} tracked
+                          </p>
+                        </div>
+
+                        <div className="mt-4 grid gap-2">
+                          {walletRegistry.length ? (
+                            walletRegistry.map((entry) => {
+                              const isProtectedAdmin = entry.wallet.toLowerCase() === savedContextWalletAddress.toLowerCase();
+                              return (
+                                <div
+                                  key={entry.wallet}
+                                  className="grid gap-3 rounded-[1.05rem] border border-white/10 bg-white/7 p-3 text-sm md:grid-cols-[1.1fr_0.7fr_0.45fr_0.45fr_auto] md:items-center"
+                                >
+                                  <div>
+                                    <p className="font-medium text-white">{formatWalletAddress(entry.wallet)}</p>
+                                    <p className="mt-1 text-xs text-white/42">
+                                      {entry.displayName || "Unnamed wallet"}
+                                      {entry.resetAt ? ` · reset ${entry.resetAt.slice(0, 10)}` : ""}
+                                    </p>
+                                  </div>
+                                  <p className="text-white/58">Last seen {entry.lastSeen.slice(0, 10)}</p>
+                                  <p className="text-white/58">{entry.connectedApps} app{entry.connectedApps === 1 ? "" : "s"}</p>
+                                  <p className="text-white/58">{entry.rewardPoints} HT</p>
+                                  <Button
+                                    type="button"
+                                    disabled={isProtectedAdmin}
+                                    onClick={() => resetWalletProfile(entry.wallet)}
+                                    className="rounded-full border border-red-300/30 bg-red-400/12 px-4 text-red-200 hover:bg-red-400/20 disabled:border-white/10 disabled:bg-white/8 disabled:text-white/28"
+                                  >
+                                    {isProtectedAdmin ? "Protected" : "Reset"}
+                                  </Button>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-[1.05rem] border border-white/10 bg-white/7 p-4 text-sm text-white/52">
+                              No wallet profiles tracked in this browser yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
                   </section>
                 </Reveal>
               ) : null}
