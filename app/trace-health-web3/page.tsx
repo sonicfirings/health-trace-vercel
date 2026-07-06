@@ -79,6 +79,7 @@ const savedContextWalletAddress = "0xEf6fdfe87081da6acC6E4755d095b8C23568577F";
 const walletStorageKey = "health-trace-web3-wallet";
 const walletProfileStoragePrefix = "health-trace-web3-profile:";
 const walletRegistryStorageKey = "health-trace-web3-wallet-registry";
+const walletHistoryStorageKey = "health-trace-web3-wallet-history";
 
 type WalletRegistryEntry = {
   wallet: string;
@@ -2082,6 +2083,26 @@ export default function Web3HealthPage() {
     }
   };
 
+  const getStoredWalletHistory = () => {
+    try {
+      return JSON.parse(window.localStorage.getItem(walletHistoryStorageKey) ?? "[]") as string[];
+    } catch {
+      return [];
+    }
+  };
+
+  const rememberWallet = (wallet: string) => {
+    const normalizedWallet = wallet.trim();
+    if (!normalizedWallet) return;
+
+    const history = getStoredWalletHistory();
+    const nextHistory = [
+      ...history.filter((item) => item.toLowerCase() !== normalizedWallet.toLowerCase()),
+      normalizedWallet,
+    ];
+    window.localStorage.setItem(walletHistoryStorageKey, JSON.stringify(nextHistory));
+  };
+
   const saveWalletRegistry = (entries: WalletRegistryEntry[]) => {
     const normalized = entries
       .reduce<WalletRegistryEntry[]>((list, entry) => {
@@ -2103,6 +2124,7 @@ export default function Web3HealthPage() {
   };
 
   const upsertWalletRegistry = (entry: WalletRegistryEntry) => {
+    rememberWallet(entry.wallet);
     const storedRegistry = getStoredWalletRegistry();
     const existing = storedRegistry.find((item) => item.wallet.toLowerCase() === entry.wallet.toLowerCase());
     const nextEntry = {
@@ -2121,6 +2143,7 @@ export default function Web3HealthPage() {
   const readWalletRegistry = () => {
     const storedRegistry = getStoredWalletRegistry();
     const currentWallet = window.localStorage.getItem(walletStorageKey);
+    const walletHistory = getStoredWalletHistory();
 
     const profileEntries = Object.keys(window.localStorage)
       .filter((key) => key.startsWith(walletProfileStoragePrefix))
@@ -2161,7 +2184,31 @@ export default function Web3HealthPage() {
           ]
         : [];
 
-    saveWalletRegistry([...storedRegistry, ...profileEntries, ...currentWalletEntry]);
+    const historyEntries = walletHistory
+      .filter(
+        (wallet) =>
+          !profileEntries.some((entry) => entry.wallet.toLowerCase() === wallet.toLowerCase()) &&
+          !currentWalletEntry.some((entry) => entry.wallet.toLowerCase() === wallet.toLowerCase()),
+      )
+      .map((wallet) => {
+        const existing = storedRegistry.find((entry) => entry.wallet.toLowerCase() === wallet.toLowerCase());
+        return {
+          wallet,
+          firstSeen: existing?.firstSeen ?? new Date().toISOString(),
+          lastSeen: existing?.lastSeen ?? new Date().toISOString(),
+          displayName: existing?.displayName ?? "",
+          connectedApps: existing?.connectedApps ?? 0,
+          rewardPoints: existing?.rewardPoints ?? 0,
+          resetAt: existing?.resetAt,
+        };
+      });
+
+    saveWalletRegistry([...storedRegistry, ...profileEntries, ...currentWalletEntry, ...historyEntries]);
+  };
+
+  const refreshAdminWalletRegistry = () => {
+    readWalletRegistry();
+    void loadBackendWalletRegistry();
   };
 
   const resetWalletProfile = (targetWallet: string) => {
@@ -4316,9 +4363,18 @@ export default function Web3HealthPage() {
                               Visible only to {formatWalletAddress(savedContextWalletAddress)}.
                             </p>
                           </div>
-                          <p className="rounded-full border border-white/10 bg-white/8 px-3 py-1 text-sm text-white/72">
-                            {walletRegistry.length} wallet{walletRegistry.length === 1 ? "" : "s"} tracked
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              onClick={refreshAdminWalletRegistry}
+                              className="h-9 rounded-full border border-white/12 bg-white/8 px-4 text-sm text-white hover:bg-white/12"
+                            >
+                              Refresh
+                            </Button>
+                            <p className="rounded-full border border-white/10 bg-white/8 px-3 py-1 text-sm text-white/72">
+                              {walletRegistry.length} wallet{walletRegistry.length === 1 ? "" : "s"} tracked
+                            </p>
+                          </div>
                         </div>
 
                         <div className="mt-4 grid gap-2">
