@@ -2042,12 +2042,56 @@ export default function Web3HealthPage() {
     ? currentDayRecord.recoveryCopy
     : "This wallet has no sleep, activity, or wearable context yet. Connect a health source to let Trace build recovery intelligence.";
 
+  const syncWalletRegistryEntry = async (entry: WalletRegistryEntry) => {
+    try {
+      await fetch("/api/wallets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          wallet: entry.wallet,
+          displayName: entry.displayName,
+          connectedApps: entry.connectedApps,
+          rewardPoints: entry.rewardPoints,
+        }),
+      });
+    } catch {
+      // Local storage remains the offline fallback for the prototype.
+    }
+  };
+
+  const loadBackendWalletRegistry = async () => {
+    if (!isAdminWallet || !walletAddress) return;
+
+    try {
+      const response = await fetch(`/api/wallets?adminWallet=${encodeURIComponent(walletAddress)}`);
+      if (!response.ok) return;
+      const data = (await response.json()) as { wallets?: WalletRegistryEntry[] };
+      if (data.wallets?.length) {
+        saveWalletRegistry([...getStoredWalletRegistry(), ...data.wallets]);
+      }
+    } catch {
+      // Keep the local registry if Supabase is not configured yet.
+    }
+  };
+
+  const getStoredWalletRegistry = () => {
+    try {
+      return JSON.parse(window.localStorage.getItem(walletRegistryStorageKey) ?? "[]") as WalletRegistryEntry[];
+    } catch {
+      return [];
+    }
+  };
+
   const saveWalletRegistry = (entries: WalletRegistryEntry[]) => {
     const normalized = entries
       .reduce<WalletRegistryEntry[]>((list, entry) => {
         const existingIndex = list.findIndex((item) => item.wallet.toLowerCase() === entry.wallet.toLowerCase());
         if (existingIndex >= 0) {
-          list[existingIndex] = entry;
+          list[existingIndex] = {
+            ...list[existingIndex],
+            ...entry,
+            firstSeen: list[existingIndex].firstSeen || entry.firstSeen,
+          };
           return list;
         }
         return [...list, entry];
@@ -2058,13 +2102,25 @@ export default function Web3HealthPage() {
     window.localStorage.setItem(walletRegistryStorageKey, JSON.stringify(normalized));
   };
 
+  const upsertWalletRegistry = (entry: WalletRegistryEntry) => {
+    const storedRegistry = getStoredWalletRegistry();
+    const existing = storedRegistry.find((item) => item.wallet.toLowerCase() === entry.wallet.toLowerCase());
+    const nextEntry = {
+      ...existing,
+      ...entry,
+      firstSeen: existing?.firstSeen ?? entry.firstSeen,
+    };
+
+    saveWalletRegistry([
+      ...storedRegistry.filter((item) => item.wallet.toLowerCase() !== entry.wallet.toLowerCase()),
+      nextEntry,
+    ]);
+    void syncWalletRegistryEntry(nextEntry);
+  };
+
   const readWalletRegistry = () => {
-    let storedRegistry: WalletRegistryEntry[] = [];
-    try {
-      storedRegistry = JSON.parse(window.localStorage.getItem(walletRegistryStorageKey) ?? "[]") as WalletRegistryEntry[];
-    } catch {
-      storedRegistry = [];
-    }
+    const storedRegistry = getStoredWalletRegistry();
+    const currentWallet = window.localStorage.getItem(walletStorageKey);
 
     const profileEntries = Object.keys(window.localStorage)
       .filter((key) => key.startsWith(walletProfileStoragePrefix))
@@ -2088,7 +2144,24 @@ export default function Web3HealthPage() {
         };
       });
 
-    saveWalletRegistry([...storedRegistry, ...profileEntries]);
+    const currentWalletEntry =
+      currentWallet && !profileEntries.some((entry) => entry.wallet.toLowerCase() === currentWallet.toLowerCase())
+        ? [
+            {
+              wallet: currentWallet,
+              firstSeen:
+                storedRegistry.find((entry) => entry.wallet.toLowerCase() === currentWallet.toLowerCase())?.firstSeen ??
+                new Date().toISOString(),
+              lastSeen: new Date().toISOString(),
+              displayName: "",
+              connectedApps: 0,
+              rewardPoints: 0,
+              resetAt: storedRegistry.find((entry) => entry.wallet.toLowerCase() === currentWallet.toLowerCase())?.resetAt,
+            },
+          ]
+        : [];
+
+    saveWalletRegistry([...storedRegistry, ...profileEntries, ...currentWalletEntry]);
   };
 
   const resetWalletProfile = (targetWallet: string) => {
@@ -2116,6 +2189,11 @@ export default function Web3HealthPage() {
           : entry,
       ),
     );
+    void fetch("/api/wallets", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ adminWallet: walletAddress, targetWallet }),
+    }).catch(() => undefined);
   };
 
   useEffect(() => {
@@ -2147,22 +2225,23 @@ export default function Web3HealthPage() {
   }, []);
 
   useEffect(() => {
+    void loadBackendWalletRegistry();
+  }, [isAdminWallet, walletAddress]);
+
+  useEffect(() => {
     if (!walletAddress) return;
 
     const now = new Date().toISOString();
-    const existing = walletRegistry.find((entry) => entry.wallet.toLowerCase() === walletAddress.toLowerCase());
-    saveWalletRegistry([
-      ...walletRegistry.filter((entry) => entry.wallet.toLowerCase() !== walletAddress.toLowerCase()),
-      {
-        wallet: walletAddress,
-        firstSeen: existing?.firstSeen ?? now,
-        lastSeen: now,
-        displayName,
-        connectedApps: connectedHealthApps.length,
-        rewardPoints,
-        resetAt: existing?.resetAt,
-      },
-    ]);
+    const existing = getStoredWalletRegistry().find((entry) => entry.wallet.toLowerCase() === walletAddress.toLowerCase());
+    upsertWalletRegistry({
+      wallet: walletAddress,
+      firstSeen: existing?.firstSeen ?? now,
+      lastSeen: now,
+      displayName,
+      connectedApps: connectedHealthApps.length,
+      rewardPoints,
+      resetAt: existing?.resetAt,
+    });
   }, [connectedHealthApps.length, displayName, rewardPoints, walletAddress]);
 
   useEffect(() => {
@@ -2580,7 +2659,19 @@ export default function Web3HealthPage() {
     try {
       const accounts = (await window.ethereum.request({ method: "eth_requestAccounts" })) as string[];
       if (accounts?.[0]) {
-        setWalletAddress(accounts[0]);
+        const nextWallet = accounts[0];
+        const now = new Date().toISOString();
+        const existing = getStoredWalletRegistry().find((entry) => entry.wallet.toLowerCase() === nextWallet.toLowerCase());
+        upsertWalletRegistry({
+          wallet: nextWallet,
+          firstSeen: existing?.firstSeen ?? now,
+          lastSeen: now,
+          displayName: existing?.displayName ?? "",
+          connectedApps: existing?.connectedApps ?? 0,
+          rewardPoints: existing?.rewardPoints ?? 0,
+          resetAt: existing?.resetAt,
+        });
+        setWalletAddress(nextWallet);
       } else {
         setWalletError("Wallet did not return an account.");
       }
