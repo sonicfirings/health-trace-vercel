@@ -1857,7 +1857,10 @@ export default function Web3HealthPage() {
       ? { ...createDailyRecord(todayKey), ...dailyRecords[todayKey] }
       : createDailyRecord(todayKey)
     : null;
-  const chartConnectedDate = isDemoAccount ? getGmt8WeekKey() : healthContextConnectedDate;
+  const firstSavedRecordDate = Object.keys(dailyRecords).sort()[0] ?? "";
+  const chartConnectedDate = isDemoAccount
+    ? getGmt8WeekKey()
+    : healthContextConnectedDate || firstSavedRecordDate || (hasLiveHealthContext ? todayKey : "");
   const dashboardTrend = currentWeekDays.map((day, index) => {
     const savedPoint = day.dateKey === todayKey && currentDayRecord ? currentDayRecord : dailyRecords[day.dateKey];
     const isFuture = day.dateKey > todayKey;
@@ -1877,17 +1880,21 @@ export default function Web3HealthPage() {
 
     return {
       ...day,
-      score: savedPoint.score,
-      sleep: savedPoint.sleep,
-      market: savedPoint.market,
+      score: savedPoint.healthScore,
+      sleep: savedPoint.recoveryScore,
+      market: savedPoint.marketStress,
     };
   });
+  const dashboardScoreSeries = dashboardTrend.map((point) => point.score ?? 0);
+  const dashboardRecoverySeries = dashboardTrend.map((point) => point.sleep ?? 0);
+  const dashboardMarketSeries = dashboardTrend.map((point) => point.market ?? 0);
   const dashboardSignals = (hasLiveHealthContext ? homeSignals : emptyHomeSignals).map((signal) => {
     if (signal.label === "Web3 Health Score") {
       return {
         ...signal,
         value: currentDayRecord ? String(currentDayRecord.healthScore) : "0",
         detail: currentDayRecord ? "Synced from today's health context" : "Connect health apps to build a baseline",
+        chart: dashboardScoreSeries,
       };
     }
     if (signal.label === "Market Stress") {
@@ -1895,6 +1902,7 @@ export default function Web3HealthPage() {
         ...signal,
         value: currentDayRecord ? String(currentDayRecord.marketStress) : "--",
         detail: currentDayRecord ? `BTC volatility is ${currentDayRecord.marketVolatility} vs baseline` : "No source connected yet",
+        chart: dashboardMarketSeries,
       };
     }
     if (signal.label === "Sleep Debt") {
@@ -1902,6 +1910,7 @@ export default function Web3HealthPage() {
         ...signal,
         value: currentDayRecord ? currentDayRecord.sleepDebt : "--",
         detail: currentDayRecord ? "Synced from recovery context" : "No source connected yet",
+        chart: dashboardRecoverySeries,
       };
     }
     if (signal.label === "Screen Fatigue") {
@@ -3685,7 +3694,8 @@ export default function Web3HealthPage() {
                             <div className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full border border-trace-green/20 bg-trace-green/10 text-[0.65rem] font-semibold text-trace-green">
                               {index + 1}
                             </div>
-                            <div className="flex items-center gap-2 pr-8">
+                            <p className="pr-8 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/42">{label}</p>
+                            <div className="mt-2 flex items-center gap-2 pr-8">
                               <p className="text-xl font-medium leading-tight">{value}</p>
                               {label === "Badge status" ? (
                                 <button
@@ -3698,7 +3708,6 @@ export default function Web3HealthPage() {
                                 </button>
                               ) : null}
                             </div>
-                            <p className="mt-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/42">{label}</p>
                             {label === "Badge status" && badgeHintOpen === "stats" ? (
                               <p className="mt-3 rounded-xl border border-trace-green/20 bg-trace-green/10 px-3 py-2 text-xs leading-5 text-trace-green">
                                 Reach level 6 to mint badge.
