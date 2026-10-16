@@ -8,6 +8,9 @@ interface IChogGenesis {
 /// @notice Stores public action proofs and Care XP against an existing Chog NFT.
 /// Raw health data must remain offchain; proofId and summaryHash are opaque hashes.
 contract TraceChogGuardian {
+    // Shifts Unix weeks so each week starts Monday 00:00 GMT+8 (Sunday 16:00 UTC).
+    uint256 private constant GMT8_MONDAY_OFFSET = 3 days + 8 hours;
+
     struct GuardianState {
         uint64 careXp;
         uint32 actionCount;
@@ -64,7 +67,7 @@ contract TraceChogGuardian {
         uint32 weekIndex,
         bytes32 summaryHash
     ) external onlyChogOwner(tokenId) {
-        uint32 currentWeek = uint32(block.timestamp / 1 weeks);
+        uint32 currentWeek = currentWeekIndex();
         require(weekIndex == currentWeek, "invalid week");
         require(guardians[tokenId].lastClaimedWeek < currentWeek, "week already claimed");
         require(summaryHash != bytes32(0), "empty summary");
@@ -74,6 +77,10 @@ contract TraceChogGuardian {
         guardian.careXp += 60;
 
         emit WeeklyProofClaimed(tokenId, msg.sender, currentWeek, summaryHash, levelFor(guardian.careXp));
+    }
+
+    function currentWeekIndex() public view returns (uint32) {
+        return uint32((block.timestamp + GMT8_MONDAY_OFFSET) / 1 weeks);
     }
 
     function levelFor(uint256 careXp) public pure returns (uint8) {

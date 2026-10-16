@@ -199,6 +199,8 @@ const getGmt8WeekStart = () => {
   return monday;
 };
 const getGmt8WeekKey = () => getGmt8WeekStart().toISOString().slice(0, 10);
+const getGmt8OnchainWeekIndex = () =>
+  Math.floor((Date.now() / 1000 + 3 * 24 * 60 * 60 + 8 * 60 * 60) / (7 * 24 * 60 * 60));
 const formatGmt8WeekRange = () => {
   const formatter = new Intl.DateTimeFormat("en", { day: "numeric", month: "long", timeZone: "UTC" });
   const start = getGmt8WeekStart();
@@ -1807,7 +1809,7 @@ function MobileTabScreen({
                 disabled={!guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
                 className="mt-3 h-9 w-full rounded-full bg-trace-green text-xs font-semibold text-[#071006] hover:bg-[#adff91] disabled:bg-white/10 disabled:text-white/32"
               >
-                {guardianClaimState ? "Confirm in wallet..." : guardianWeeklyProofClaimed ? "Proof claimed" : "Sign weekly proof"}
+                {guardianClaimState ? "Confirm in wallet..." : guardianWeeklyProofClaimed ? "Proof claimed" : "Claim weekly proof"}
               </Button>
             </div>
           </section>
@@ -3156,11 +3158,15 @@ export default function Web3HealthPage() {
       let proofReference = "";
 
       if (traceChogGuardianContractAddress && chogGuardian.mode === "wallet") {
+        const network = await provider.getNetwork();
+        if (network.chainId !== BigInt(143)) {
+          throw new Error("Switch your wallet to Monad Mainnet before claiming the weekly proof.");
+        }
         setGuardianClaimState("wallet");
         const guardianContract = new Contract(traceChogGuardianContractAddress, traceChogGuardianAbi, signer);
         const transaction = await guardianContract.claimWeeklyProof(
           BigInt(chogGuardian.tokenId),
-          Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000)),
+          getGmt8OnchainWeekIndex(),
           summaryHash,
         );
         proofReference = transaction.hash as string;
@@ -4566,7 +4572,7 @@ export default function Web3HealthPage() {
                                     ? "Weekly proof claimed"
                                     : traceChogGuardianContractAddress && chogGuardian?.mode === "wallet"
                                       ? "Claim on Monad"
-                                      : "Sign weekly proof"}
+                                      : "Claim weekly proof"}
                             </Button>
                             <Button className="rounded-full border border-[#dce6d9] bg-white text-[#172117] hover:bg-[#eef5ec]">
                               Prepare poster
