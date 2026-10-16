@@ -92,6 +92,7 @@ const chogGenesisContractAddress =
   process.env.NEXT_PUBLIC_CHOG_GENESIS_CONTRACT ?? "0xc96d31f8626c6d03fae5dcd3d61e3fb9f4a73763";
 const traceChogGuardianContractAddress = process.env.NEXT_PUBLIC_TRACE_CHOG_GUARDIAN_CONTRACT ?? "";
 const chogGuardianImage = "/chog/chog-guardian.png";
+const chogLoginHeroImage = "/chog/chog-login-hero.png";
 const chogGenesisAbi = [
   "function balanceOf(address owner) view returns (uint256)",
   "function tokensOfOwner(address owner) view returns (uint256[])",
@@ -113,6 +114,7 @@ type OwnedChogToken = {
   tokenId: string;
   displayTokenId: string;
   label: string;
+  image: string;
 };
 
 type WalletRegistryEntry = {
@@ -282,6 +284,50 @@ const getPreviewChogTokenId = (wallet: string) => {
   return String((Number.isFinite(numeric) ? numeric : 0) % 1969 + 1);
 };
 
+const resolveChogAssetUrl = (uri: string) => {
+  if (!uri.startsWith("ipfs://")) return uri;
+  return `https://gateway.pinata.cloud/ipfs/${uri.slice("ipfs://".length)}`;
+};
+
+const formatWalletTransactionError = (error: unknown) => {
+  const walletError = error as {
+    code?: string | number;
+    message?: string;
+    info?: { error?: { code?: string | number; message?: string } };
+  };
+  const errorCode = walletError?.code ?? walletError?.info?.error?.code;
+  const errorMessage = `${walletError?.message ?? ""} ${walletError?.info?.error?.message ?? ""}`.toLowerCase();
+  const userCancelled =
+    errorCode === "ACTION_REJECTED" ||
+    errorCode === 4001 ||
+    errorCode === "4001" ||
+    errorMessage.includes("user rejected") ||
+    errorMessage.includes("user denied");
+
+  return userCancelled ? "user cancelled transaction" : "Transaction could not be completed. Please try again.";
+};
+
+const loadOwnedChogToken = async (collection: Contract, tokenId: string): Promise<OwnedChogToken> => {
+  const tokenUri = String(await collection.tokenURI(tokenId));
+  const metadataFile = tokenUri.match(/\/([^/?#]+)\.json(?:[?#].*)?$/i)?.[1];
+  const displayTokenId = metadataFile ? decodeURIComponent(metadataFile) : tokenId;
+  let label = `CHOG #${displayTokenId}`;
+  let image = chogGuardianImage;
+
+  try {
+    const metadataResponse = await fetch(resolveChogAssetUrl(tokenUri));
+    if (metadataResponse.ok) {
+      const metadata = (await metadataResponse.json()) as { name?: string; image?: string };
+      label = metadata.name?.trim() || label;
+      image = metadata.image ? resolveChogAssetUrl(metadata.image) : image;
+    }
+  } catch {
+    // Keep ownership usable even if the metadata gateway is temporarily unavailable.
+  }
+
+  return { tokenId, displayTokenId, label, image };
+};
+
 const getGuardianMood = (record: HealthDailyRecord | null) => {
   if (!record) return { label: "Waiting for signals", tone: "text-white/50", aura: "from-white/10 to-white/[0.02]" };
   if (record.healthScore >= 84) return { label: "Protected", tone: "text-trace-green", aura: "from-trace-green/30 to-sky-300/10" };
@@ -289,18 +335,26 @@ const getGuardianMood = (record: HealthDailyRecord | null) => {
   return { label: "Recovering", tone: "text-rose-200", aura: "from-rose-300/24 to-violet-300/10" };
 };
 
-function GuardianArtwork({ className = "" }: { className?: string }) {
+function GuardianArtwork({
+  className = "",
+  src = chogGuardianImage,
+  alt = "Chog Guardian",
+}: {
+  className?: string;
+  src?: string;
+  alt?: string;
+}) {
   return (
     <div className={`relative overflow-hidden rounded-[1.2rem] border border-white/14 bg-[#24153d] ${className}`}>
       <Image
-        src={chogGuardianImage}
-        alt="Chog guardian holding a Chog card"
+        src={src}
+        alt={alt}
         fill
         priority
         sizes="(max-width: 768px) 180px, 240px"
         className="object-cover"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#101510]/55 via-transparent to-white/5" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#171022]/55 via-transparent to-white/5" />
     </div>
   );
 }
@@ -318,8 +372,8 @@ function BrandMark({ className = "" }: { className?: string }) {
         sizes="56px"
         className="scale-[1.32] object-cover object-[50%_38%]"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#21143A]/48 via-transparent to-[#9DFF7A]/8" />
-      <div className="absolute inset-x-1 bottom-1 h-0.5 rounded-full bg-trace-green shadow-[0_0_12px_rgba(157,255,122,0.88)]" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#21143A]/48 via-transparent to-[#FF7BAC]/8" />
+      <div className="absolute inset-x-1 bottom-1 h-0.5 rounded-full bg-trace-green shadow-[0_0_12px_rgba(255,123,172,0.88)]" />
     </div>
   );
 }
@@ -346,13 +400,16 @@ function ChogTokenPicker({
             key={token.tokenId}
             type="button"
             onClick={() => onSelect(token)}
-            className={`min-h-11 rounded-[0.9rem] border px-3 text-sm font-semibold transition ${
+            className={`flex min-h-14 items-center gap-3 rounded-[0.9rem] border p-2 text-left text-sm font-semibold transition ${
               dark
                 ? "border-white/14 bg-[#21143A] text-white hover:border-trace-green hover:text-trace-green"
                 : "border-[#D9D0F1] bg-white text-[#21143A] hover:border-[#836EF9] hover:text-[#7555DA]"
             }`}
           >
-            {token.label}
+            <span className="relative size-10 shrink-0 overflow-hidden rounded-[0.7rem] bg-[#21143A]">
+              <Image src={token.image} alt="" fill sizes="40px" className="object-cover" />
+            </span>
+            <span className="truncate">{token.label}</span>
           </button>
         ))}
       </div>
@@ -1050,14 +1107,14 @@ function MiniChart({ data }: { data: number[] }) {
       <AreaChart data={data.map((value, index) => ({ index, value }))}>
         <defs>
           <linearGradient id="miniSignalWeb3" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#9DFF7A" stopOpacity={0.28} />
-            <stop offset="100%" stopColor="#9DFF7A" stopOpacity={0} />
+            <stop offset="0%" stopColor="#FF7BAC" stopOpacity={0.28} />
+            <stop offset="100%" stopColor="#FF7BAC" stopOpacity={0} />
           </linearGradient>
         </defs>
         <Area
           type="monotone"
           dataKey="value"
-          stroke="#9DFF7A"
+          stroke="#FF7BAC"
           strokeWidth={2}
           fill="url(#miniSignalWeb3)"
           isAnimationActive
@@ -1225,7 +1282,7 @@ function EyeResetPanel({
         transition={{ duration: 4.8, repeat: Infinity, ease: "easeInOut" }}
       />
       <div className="relative grid gap-4 sm:grid-cols-[auto_1fr] sm:items-center">
-        <div className="flex size-32 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_var(--eye-progress),rgba(255,255,255,0.12)_0deg)] p-1.5" style={{ "--eye-progress": `${progress * 3.6}deg` } as React.CSSProperties}>
+        <div className="flex size-32 items-center justify-center rounded-full bg-[conic-gradient(#FF7BAC_var(--eye-progress),rgba(255,255,255,0.12)_0deg)] p-1.5" style={{ "--eye-progress": `${progress * 3.6}deg` } as React.CSSProperties}>
           <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#21143A] ring-1 ring-white/10">
             <p className="text-4xl font-medium leading-none">{isOnCooldown ? 0 : secondsLeft}</p>
             <p className="mt-1 text-[0.62rem] uppercase tracking-[0.2em] text-trace-green">seconds</p>
@@ -1244,7 +1301,7 @@ function EyeResetPanel({
           <Button
             onClick={startReset}
             disabled={isRunning || isOnCooldown}
-            className="mt-5 h-11 w-full rounded-full bg-trace-green text-[#101510] hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+            className="mt-5 h-11 w-full rounded-full bg-trace-green text-[#171022] hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isRunning ? "Reset in progress" : isOnCooldown ? `Next eye rest in ${cooldownLabel}` : "Start 20-second reset"}
             {!isRunning && !isOnCooldown ? <ArrowRight className="ml-2 size-4" /> : null}
@@ -1409,8 +1466,8 @@ function MobileTabScreen({
             ))}
           </div>
         </MobileShell>
-        <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
-          <p className="text-sm font-medium text-[#172117]">Recommended protocol</p>
+        <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+          <p className="text-sm font-medium text-[#21182C]">Recommended protocol</p>
           <div className="mt-3 space-y-2">
             {[
               ...(currentDayRecord?.guardianProtocol ?? guardianProtocolActions),
@@ -1422,14 +1479,14 @@ function MobileTabScreen({
                   onClick={() => {
                     setActiveTab(item.targetTab);
                   }}
-                  className="flex w-full gap-3 rounded-[1.15rem] bg-[#f8fbf6] px-3 py-3 text-left text-sm leading-5 text-[#304030] transition hover:bg-white"
+                  className="flex w-full gap-3 rounded-[1.15rem] bg-[#FAF7FF] px-3 py-3 text-left text-sm leading-5 text-[#3B2D4A] transition hover:bg-white"
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#9DFF7A] text-xs font-semibold text-[#101510]">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#FF7BAC] text-xs font-semibold text-[#171022]">
                     {index + 1}
                   </span>
                   <span>
                     <span className="block font-medium">{item.title}</span>
-                    <span className="mt-1 block text-xs leading-5 text-[#687668]">{item.detail}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[#746A80]">{item.detail}</span>
                   </span>
                 </button>
               );
@@ -1443,7 +1500,7 @@ function MobileTabScreen({
   if (activeTab === "Market Stress") {
     return (
       <div className="space-y-4">
-        <section className="relative overflow-hidden rounded-[2.15rem] bg-[#101510] p-5 text-white shadow-[0_34px_100px_rgba(16,21,16,0.34)]">
+        <section className="relative overflow-hidden rounded-[2.15rem] bg-[#171022] p-5 text-white shadow-[0_34px_100px_rgba(16,21,16,0.34)]">
           <motion.div
             aria-hidden
             className="absolute -right-16 -top-20 size-60 rounded-full bg-amber-300/18 blur-3xl"
@@ -1462,8 +1519,8 @@ function MobileTabScreen({
               Trade calm before trading fast.
             </h2>
             <div className="mt-6 grid grid-cols-[8.2rem_1fr] items-center gap-4">
-              <div className="flex size-32 items-center justify-center rounded-full bg-[conic-gradient(#fbbf24_0deg,#9DFF7A_224deg,rgba(255,255,255,0.12)_224deg)] p-1.5 shadow-[0_0_70px_rgba(251,191,36,0.16)]">
-                <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510] ring-1 ring-white/10">
+              <div className="flex size-32 items-center justify-center rounded-full bg-[conic-gradient(#fbbf24_0deg,#FF7BAC_224deg,rgba(255,255,255,0.12)_224deg)] p-1.5 shadow-[0_0_70px_rgba(251,191,36,0.16)]">
+                <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#171022] ring-1 ring-white/10">
                   <p className="text-5xl font-medium leading-none">{hasMobileGuardianContext ? "62" : "--"}</p>
                   <p className="mt-1 text-[0.62rem] uppercase tracking-[0.16em] text-amber-200">{hasMobileGuardianContext ? "Elevated" : "No data"}</p>
                 </div>
@@ -1487,15 +1544,15 @@ function MobileTabScreen({
             </div>
           </div>
         </section>
-        <section className="rounded-[1.9rem] border border-[#dfe7dc] bg-white/90 p-4 shadow-[0_24px_70px_rgba(16,21,16,0.08)]">
+        <section className="rounded-[1.9rem] border border-[#E5DFF2] bg-white/90 p-4 shadow-[0_24px_70px_rgba(16,21,16,0.08)]">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#607260]">Stress protocol</p>
-              <p className="mt-1 text-sm font-medium text-[#172117]">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#6F617F]">Stress protocol</p>
+              <p className="mt-1 text-sm font-medium text-[#21182C]">
                 {completedMarketActions.length} / {marketStressActions.length} actions done
               </p>
             </div>
-            <div className="rounded-full bg-[#101510] px-3 py-1 text-xs font-medium text-trace-green">Watch mode</div>
+            <div className="rounded-full bg-[#171022] px-3 py-1 text-xs font-medium text-trace-green">Watch mode</div>
           </div>
           <div className="mt-4 space-y-3">
             {marketStressActions.map((action, index) => {
@@ -1507,16 +1564,16 @@ function MobileTabScreen({
                   onClick={() => toggleMarketAction(action.title)}
                   className={`flex w-full gap-3 rounded-[1.25rem] border px-4 py-3 text-left text-sm leading-5 transition ${
                     isDone
-                      ? "border-[#101510] bg-[#101510] text-white shadow-[0_16px_44px_rgba(16,21,16,0.16)]"
-                      : "border-[#dfe7dc] bg-[#f8fbf6] text-[#304030] hover:border-[#cfe0cb]"
+                      ? "border-[#171022] bg-[#171022] text-white shadow-[0_16px_44px_rgba(16,21,16,0.16)]"
+                      : "border-[#E5DFF2] bg-[#FAF7FF] text-[#3B2D4A] hover:border-[#D9D0F1]"
                   }`}
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#9DFF7A] text-xs font-semibold text-[#101510]">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#FF7BAC] text-xs font-semibold text-[#171022]">
                     {isDone ? <Check size={13} strokeWidth={3} /> : index + 1}
                   </span>
                   <span>
                     <span className="block font-medium">{action.title}</span>
-                    <span className={`mt-1 block text-xs leading-5 ${isDone ? "text-white/54" : "text-[#687668]"}`}>{action.detail}</span>
+                    <span className={`mt-1 block text-xs leading-5 ${isDone ? "text-white/54" : "text-[#746A80]"}`}>{action.detail}</span>
                   </span>
                 </button>
               );
@@ -1530,10 +1587,10 @@ function MobileTabScreen({
   if (activeTab === "Recovery") {
     return (
       <div className="space-y-4">
-        <section className="relative overflow-hidden rounded-[2rem] bg-[#101510] p-5 text-white shadow-[0_30px_90px_rgba(16,21,16,0.32)]">
+        <section className="relative overflow-hidden rounded-[2rem] bg-[#171022] p-5 text-white shadow-[0_30px_90px_rgba(16,21,16,0.32)]">
           <motion.div
             aria-hidden
-            className="absolute -right-16 -top-20 size-56 rounded-full bg-[#9DFF7A]/20 blur-3xl"
+            className="absolute -right-16 -top-20 size-56 rounded-full bg-[#FF7BAC]/20 blur-3xl"
             animate={{ opacity: [0.42, 0.78, 0.42], scale: [0.92, 1.08, 0.92] }}
             transition={{ duration: 5.8, repeat: Infinity, ease: "easeInOut" }}
           />
@@ -1552,8 +1609,8 @@ function MobileTabScreen({
                     : "Connect sleep and activity data so Trace can personalize recovery guidance."}
                 </p>
               </div>
-              <div className="flex size-24 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_302deg,rgba(255,255,255,0.12)_302deg)] p-1.5 shadow-[0_0_48px_rgba(157,255,122,0.18)]">
-                <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510]">
+              <div className="flex size-24 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#FF7BAC_0deg,#FF7BAC_302deg,rgba(255,255,255,0.12)_302deg)] p-1.5 shadow-[0_0_48px_rgba(255,123,172,0.18)]">
+                <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#171022]">
                   <p className="text-3xl font-medium leading-none">{hasMobileGuardianContext ? "84" : "--"}</p>
                   <p className="mt-1 text-[0.6rem] text-trace-green">{hasMobileGuardianContext ? "Ready" : "No data"}</p>
                 </div>
@@ -1569,10 +1626,10 @@ function MobileTabScreen({
             </div>
           </div>
         </section>
-        <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/88 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+        <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/88 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-[#172117]">Tonight&apos;s recovery protocol</p>
-            <Moon className="size-5 text-[#2f7d3c]" />
+            <p className="text-sm font-medium text-[#21182C]">Tonight&apos;s recovery protocol</p>
+            <Moon className="size-5 text-[#7555DA]" />
           </div>
           <div className="mt-4 space-y-3">
             {[
@@ -1595,12 +1652,12 @@ function MobileTabScreen({
                 "Expected: protect readiness",
               ],
             ].map(([time, title, detail, outcome]) => (
-              <div key={title} className="grid grid-cols-[4.5rem_1fr] gap-3 rounded-[1.25rem] bg-[#f8fbf6] p-3">
-                <p className="text-sm font-medium text-[#2f7d3c]">{time}</p>
+              <div key={title} className="grid grid-cols-[4.5rem_1fr] gap-3 rounded-[1.25rem] bg-[#FAF7FF] p-3">
+                <p className="text-sm font-medium text-[#7555DA]">{time}</p>
                 <div>
-                  <p className="text-sm font-medium text-[#172117]">{title}</p>
-                  <p className="mt-1 text-xs leading-5 text-[#687668]">{detail}</p>
-                  <p className="mt-2 text-xs font-medium text-[#2f7d3c]">{outcome}</p>
+                  <p className="text-sm font-medium text-[#21182C]">{title}</p>
+                  <p className="mt-1 text-xs leading-5 text-[#746A80]">{detail}</p>
+                  <p className="mt-2 text-xs font-medium text-[#7555DA]">{outcome}</p>
                 </div>
               </div>
             ))}
@@ -1634,7 +1691,7 @@ function MobileTabScreen({
     return (
       <div className="space-y-4">
         <MobileShell eyebrow="FOMO / FUD" title="Track decision state, not mood.">
-          <p className="text-sm leading-6 text-[#667466]">
+          <p className="text-sm leading-6 text-[#756A82]">
             Capture market-specific emotions so the Guardian knows when volatility, losses, or
             Discord noise are driving stress.
           </p>
@@ -1648,25 +1705,25 @@ function MobileTabScreen({
               key={entry.label}
               type="button"
               onClick={() => openJournalCheckIn(entry.label)}
-              className="w-full rounded-[1.5rem] border border-[#e1e9df] bg-white/86 p-4 text-left shadow-[0_14px_40px_rgba(16,21,16,0.045)] transition hover:border-[#cfe0cb]"
+              className="w-full rounded-[1.5rem] border border-[#E8E2F2] bg-white/86 p-4 text-left shadow-[0_14px_40px_rgba(16,21,16,0.045)] transition hover:border-[#D9D0F1]"
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs text-[#667466]">{entry.label}</p>
-                  <p className="mt-1 text-2xl font-medium text-[#172117]">{selectedLevel ?? entry.value}</p>
+                  <p className="text-xs text-[#756A82]">{entry.label}</p>
+                  <p className="mt-1 text-2xl font-medium text-[#21182C]">{selectedLevel ?? entry.value}</p>
                 </div>
-                <span className={`rounded-full px-3 py-1 text-xs ${selectedLevel ? "bg-[#101510] text-white" : "bg-[#eef5ec] text-[#3a8f4d]"}`}>
+                <span className={`rounded-full px-3 py-1 text-xs ${selectedLevel ? "bg-[#171022] text-white" : "bg-[#F3EEFF] text-[#836EF9]"}`}>
                   {selectedLevel ? "Checked in" : "Check-in"}
                 </span>
               </div>
-              <p className="mt-3 text-sm leading-6 text-[#687668]">{response?.detail ?? entry.detail}</p>
-              <p className="mt-3 text-sm font-medium text-[#2f7d3c]">{response?.action ?? entry.action}</p>
+              <p className="mt-3 text-sm leading-6 text-[#746A80]">{response?.detail ?? entry.detail}</p>
+              <p className="mt-3 text-sm font-medium text-[#7555DA]">{response?.action ?? entry.action}</p>
             </button>
             );
           })}
         </div>
-        <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
-          <p className="text-sm font-medium text-[#172117]">Today&apos;s check-ins</p>
+        <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+          <p className="text-sm font-medium text-[#21182C]">Today&apos;s check-ins</p>
           <div className="mt-3 space-y-2">
             {journalCheckIns.map((action, index) => {
               const isDone = Boolean(journalSelections[action.title]);
@@ -1676,15 +1733,15 @@ function MobileTabScreen({
                   type="button"
                   onClick={() => openJournalCheckIn(action.title)}
                   className={`flex w-full gap-3 rounded-[1.15rem] px-3 py-3 text-left text-sm leading-5 transition ${
-                    isDone ? "bg-[#101510] text-white" : "bg-[#f8fbf6] text-[#304030]"
+                    isDone ? "bg-[#171022] text-white" : "bg-[#FAF7FF] text-[#3B2D4A]"
                   }`}
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#9DFF7A] text-xs font-semibold text-[#101510]">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#FF7BAC] text-xs font-semibold text-[#171022]">
                     {isDone ? <Check size={13} strokeWidth={3} /> : index + 1}
                   </span>
                   <span>
                     <span className="block font-medium">{action.title}</span>
-                    <span className={`mt-1 block text-xs leading-5 ${isDone ? "text-white/54" : "text-[#687668]"}`}>{action.detail}</span>
+                    <span className={`mt-1 block text-xs leading-5 ${isDone ? "text-white/54" : "text-[#746A80]"}`}>{action.detail}</span>
                   </span>
                 </button>
               );
@@ -1724,8 +1781,8 @@ function MobileTabScreen({
             </div>
           ) : null}
         </MobileShell>
-        <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
-          <p className="text-sm font-medium text-[#172117]">Today&apos;s missions</p>
+        <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+          <p className="text-sm font-medium text-[#21182C]">Today&apos;s missions</p>
           <div className="mt-3 space-y-2">
             {rewardMissions.map((mission) => {
               const Icon = mission.icon;
@@ -1735,13 +1792,13 @@ function MobileTabScreen({
                   key={mission.label}
                   type="button"
                   onClick={() => setActiveTab(mission.targetTab as HealthTab)}
-                  className={`flex w-full items-center gap-3 rounded-[1.2rem] p-3 text-left ${isDone ? "bg-[#101510] text-white" : "bg-[#f8fbf6]"}`}
+                  className={`flex w-full items-center gap-3 rounded-[1.2rem] p-3 text-left ${isDone ? "bg-[#171022] text-white" : "bg-[#FAF7FF]"}`}
                 >
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-[#e9f9e4] text-[#2f7d3c]">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-[#F5EDFF] text-[#7555DA]">
                     {isDone ? <Check size={16} strokeWidth={3} /> : <Icon size={16} />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className={`block text-sm font-medium leading-5 ${isDone ? "text-white" : "text-[#172117]"}`}>
+                    <span className={`block text-sm font-medium leading-5 ${isDone ? "text-white" : "text-[#21182C]"}`}>
                       {mission.label === "Complete 20-20-20 eye break" ? (
                         <>
                           <span className="block">Complete 20-20-20</span>
@@ -1756,9 +1813,9 @@ function MobileTabScreen({
                         mission.label
                       )}
                     </span>
-                    <span className={`mt-0.5 block text-xs ${isDone ? "text-white/54" : "text-[#687668]"}`}>{isDone ? "Completed" : mission.status}</span>
+                    <span className={`mt-0.5 block text-xs ${isDone ? "text-white/54" : "text-[#746A80]"}`}>{isDone ? "Completed" : mission.status}</span>
                   </span>
-                  <span className="text-xs font-semibold text-[#2f7d3c]">{isDone ? "Earned" : mission.reward}</span>
+                  <span className="text-xs font-semibold text-[#7555DA]">{isDone ? "Earned" : mission.reward}</span>
                 </button>
               );
             })}
@@ -1781,15 +1838,15 @@ function MobileTabScreen({
             Chog Guardian answers with your health signals, proof history, and onchain behavior context.
           </p>
         </MobileShell>
-        <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+        <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
           <div className="space-y-3">
             {chatMessages.map((message, index) => (
               <div
                 key={`${message.role}-${index}`}
                 className={`rounded-[1.35rem] p-4 text-sm leading-6 ${
                   message.role === "assistant"
-                    ? "bg-[#101510] text-white shadow-[0_20px_55px_rgba(16,21,16,0.16)]"
-                    : "ml-8 bg-[#eef5ec] text-[#172117]"
+                    ? "bg-[#171022] text-white shadow-[0_20px_55px_rgba(16,21,16,0.16)]"
+                    : "ml-8 bg-[#F3EEFF] text-[#21182C]"
                 }`}
               >
                 {message.text}
@@ -1801,13 +1858,13 @@ function MobileTabScreen({
               <button
                 key={prompt}
                 type="button"
-                className="rounded-full border border-[#d9e1d7] bg-white px-3 py-2 text-xs text-[#526152]"
+                className="rounded-full border border-[#E1DAEC] bg-white px-3 py-2 text-xs text-[#5F526F]"
               >
                 {prompt}
               </button>
             ))}
           </div>
-          <div className="mt-4 flex items-center gap-2 rounded-full border border-[#d9e1d7] bg-[#f8fbf6] px-4 py-3 text-sm text-[#7b877b]">
+          <div className="mt-4 flex items-center gap-2 rounded-full border border-[#E1DAEC] bg-[#FAF7FF] px-4 py-3 text-sm text-[#85788F]">
             <MessageCircle size={16} />
             Ask why recovery is dropping...
           </div>
@@ -1826,21 +1883,21 @@ function MobileTabScreen({
             <p className="mt-2 text-sm text-trace-green">Builder Balance Badge pending</p>
           </div>
         </MobileShell>
-        <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+        <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#607260]">Weekly report</p>
-              <h3 className="mt-2 text-2xl font-medium leading-tight text-[#172117]">{weeklyReport.title}</h3>
-              <p className="mt-1 text-xs text-[#687668]">{weeklyRangeLabel}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#6F617F]">Weekly report</p>
+              <h3 className="mt-2 text-2xl font-medium leading-tight text-[#21182C]">{weeklyReport.title}</h3>
+              <p className="mt-1 text-xs text-[#746A80]">{weeklyRangeLabel}</p>
             </div>
-            <FileText className="size-6 text-[#2f7d3c]" />
+            <FileText className="size-6 text-[#7555DA]" />
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#687668]">{weeklyReportSummary}</p>
+          <p className="mt-3 text-sm leading-6 text-[#746A80]">{weeklyReportSummary}</p>
           <div className="mt-4 grid grid-cols-2 gap-2">
             {weeklyReportStats.map(([label, value]) => (
-              <div key={label} className="rounded-[1.1rem] bg-[#f8fbf6] p-3">
-                <p className="text-lg font-medium text-[#172117]">{value}</p>
-                <p className="mt-1 text-[0.68rem] text-[#687668]">{label}</p>
+              <div key={label} className="rounded-[1.1rem] bg-[#FAF7FF] p-3">
+                <p className="text-lg font-medium text-[#21182C]">{value}</p>
+                <p className="mt-1 text-[0.68rem] text-[#746A80]">{label}</p>
               </div>
             ))}
           </div>
@@ -1860,7 +1917,7 @@ function MobileTabScreen({
                 type="button"
                 onClick={claimWeeklyGuardianProof}
                 disabled={!guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
-                className="mt-3 h-9 w-full rounded-full bg-trace-green text-xs font-semibold text-[#071006] hover:bg-[#adff91] disabled:bg-white/10 disabled:text-white/32"
+                className="mt-3 h-9 w-full rounded-full bg-trace-green text-xs font-semibold text-[#130B20] hover:bg-[#FF9DCA] disabled:bg-white/10 disabled:text-white/32"
               >
                 {guardianClaimState ? "Confirm in wallet..." : guardianWeeklyProofClaimed ? "Proof claimed" : "Claim weekly proof"}
               </Button>
@@ -1877,15 +1934,15 @@ function MobileTabScreen({
                 onClick={() => syncProofAction(proof)}
                 disabled={proof.completed && proof.syncable}
                 className={`rounded-[1.35rem] border p-3 text-left shadow-[0_14px_40px_rgba(16,21,16,0.045)] ${
-                  proof.completed ? "border-[#cfe0cb] bg-[#effbe9]" : "border-[#e1e9df] bg-white/86"
+                  proof.completed ? "border-[#D9D0F1] bg-[#F8F0FF]" : "border-[#E8E2F2] bg-white/86"
                 }`}
               >
-                <div className="flex size-9 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#3a8f4d]">
+                <div className="flex size-9 items-center justify-center rounded-2xl bg-[#F3EEFF] text-[#836EF9]">
                   {proof.completed ? <Check size={16} strokeWidth={3} /> : <Icon size={16} />}
                 </div>
-                <p className="mt-4 text-sm font-medium leading-5 text-[#172117]">{proof.label}</p>
-                <p className="mt-2 text-[0.68rem] text-[#6d786d]">{proof.status}</p>
-                <p className="mt-3 text-[0.68rem] font-semibold text-[#2f7d3c]">{proof.actionLabel}</p>
+                <p className="mt-4 text-sm font-medium leading-5 text-[#21182C]">{proof.label}</p>
+                <p className="mt-2 text-[0.68rem] text-[#7A6F86]">{proof.status}</p>
+                <p className="mt-3 text-[0.68rem] font-semibold text-[#7555DA]">{proof.actionLabel}</p>
               </button>
             );
           })}
@@ -1896,20 +1953,20 @@ function MobileTabScreen({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+      <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-[#172117]">Wallet</p>
-            <p className="mt-1 text-xs leading-5 text-[#687668]">
+            <p className="text-sm font-medium text-[#21182C]">Wallet</p>
+            <p className="mt-1 text-xs leading-5 text-[#746A80]">
               {walletAddress ? `Wallet ${formatWalletAddress(walletAddress)}` : "Connect for proofs and consent records"}
             </p>
           </div>
-          <Wallet className="size-5 text-[#2f7d3c]" />
+          <Wallet className="size-5 text-[#7555DA]" />
         </div>
         <Button
           onClick={onConnectWallet}
           disabled={isWalletConnecting}
-          className="mt-4 h-11 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525]"
+          className="mt-4 h-11 w-full rounded-full bg-[#171022] text-white hover:bg-[#302345]"
         >
           {walletAddress ? "Wallet connected" : isWalletConnecting ? "Connecting..." : "Connect wallet"}
         </Button>
@@ -1917,7 +1974,7 @@ function MobileTabScreen({
       </section>
       {chogGuardian ? (
         <section className="grid grid-cols-[5.5rem_1fr] gap-4 rounded-[1.75rem] bg-[#21143a] p-3 text-white shadow-[0_20px_60px_rgba(33,20,58,0.18)]">
-          <GuardianArtwork className="aspect-square" />
+          <GuardianArtwork className="aspect-square" src={chogGuardian.image} alt={chogGuardian.label} />
           <div className="min-w-0 py-2 pr-1">
             <div className="flex items-center justify-between gap-2">
               <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/68">Active Chog guardian</p>
@@ -1948,8 +2005,8 @@ function MobileTabScreen({
         </Button>
       ) : null}
       {chogActivationError ? <p className="text-xs leading-5 text-[#7555DA]">{chogActivationError}</p> : null}
-      <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
-        <p className="text-sm font-medium text-[#172117]">Health Apps</p>
+      <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+        <p className="text-sm font-medium text-[#21182C]">Health Apps</p>
         <div className="mt-4 grid grid-cols-4 gap-2">
           {healthApps.map((app) => {
             const Icon = app.icon;
@@ -1962,19 +2019,19 @@ function MobileTabScreen({
                 type="button"
                 onClick={() => setSelectedHealthApp(app.label)}
                 className={`relative rounded-[1.15rem] border p-2 text-center transition ${
-                  isSelected ? "border-[#101510] bg-[#101510] text-white" : "border-transparent bg-[#f8fbf6] text-[#657265]"
+                  isSelected ? "border-[#171022] bg-[#171022] text-white" : "border-transparent bg-[#FAF7FF] text-[#756A82]"
                 }`}
               >
                 {isConnected ? (
-                  <span className="absolute right-2 top-2 flex size-4 items-center justify-center rounded-full bg-trace-green text-[#101510]">
+                  <span className="absolute right-2 top-2 flex size-4 items-center justify-center rounded-full bg-trace-green text-[#171022]">
                     <Check size={10} strokeWidth={3} />
                   </span>
                 ) : null}
-                <span className={`mx-auto flex size-10 items-center justify-center rounded-2xl ${isSelected ? "bg-trace-green/15 text-trace-green" : "bg-[#eef5ec] text-[#3a8f4d]"}`}>
+                <span className={`mx-auto flex size-10 items-center justify-center rounded-2xl ${isSelected ? "bg-trace-green/15 text-trace-green" : "bg-[#F3EEFF] text-[#836EF9]"}`}>
                   <Icon size={17} />
                 </span>
                 <span className="mt-2 block text-[0.62rem] font-medium leading-tight">{app.label}</span>
-                <span className={`mt-1 block text-[0.58rem] ${isSelected ? "text-white/46" : "text-[#3a8f4d]"}`}>
+                <span className={`mt-1 block text-[0.58rem] ${isSelected ? "text-white/46" : "text-[#836EF9]"}`}>
                   {isConnected ? `${connectedCount} data` : "Tap to connect"}
                 </span>
               </button>
@@ -1982,8 +2039,8 @@ function MobileTabScreen({
           })}
         </div>
       </section>
-      <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
-        <p className="text-sm font-medium text-[#172117]">{selectedHealthApp} data permissions</p>
+      <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+        <p className="text-sm font-medium text-[#21182C]">{selectedHealthApp} data permissions</p>
         {connectedHealthApps.includes(selectedHealthApp) ? (
           <>
             <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1996,8 +2053,8 @@ function MobileTabScreen({
                     onClick={() => toggleHealthPermission(selectedHealthApp, permission)}
                     className={`rounded-full border px-3 py-2 text-xs font-medium transition ${
                       isEnabled
-                        ? "border-[#101510] bg-[#101510] text-white"
-                        : "border-[#dfe7dc] bg-[#f8fbf6] text-[#657265]"
+                        ? "border-[#171022] bg-[#171022] text-white"
+                        : "border-[#E5DFF2] bg-[#FAF7FF] text-[#756A82]"
                     }`}
                   >
                     {permission}
@@ -2013,20 +2070,20 @@ function MobileTabScreen({
             </Button>
           </>
         ) : (
-          <div className="mt-3 rounded-[1.25rem] bg-[#f8fbf6] p-3">
-            <p className="text-xs leading-5 text-[#687668]">
+          <div className="mt-3 rounded-[1.25rem] bg-[#FAF7FF] p-3">
+            <p className="text-xs leading-5 text-[#746A80]">
               Connect to {selectedHealthApp} first, then choose what health data to share.
             </p>
             <Button
               onClick={() => connectHealthApp(selectedHealthApp)}
-              className="mt-3 h-10 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525]"
+              className="mt-3 h-10 w-full rounded-full bg-[#171022] text-white hover:bg-[#302345]"
             >
               Connect to {selectedHealthApp}
             </Button>
           </div>
         )}
       </section>
-      <Button onClick={() => setActiveTab("Proofs")} className="h-12 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525]">
+      <Button onClick={() => setActiveTab("Proofs")} className="h-12 w-full rounded-full bg-[#171022] text-white hover:bg-[#302345]">
         Review proof model
       </Button>
     </div>
@@ -2292,12 +2349,12 @@ export default function Web3HealthPage() {
     ? [
         { label: "Devices connected", detail: isDemoAccount ? "Demo health stack" : `${connectedHealthApps.length} source${connectedHealthApps.length === 1 ? "" : "s"}`, className: "border-sky-200 bg-sky-50 text-sky-700" },
         { label: "Decision watch", detail: "Protect trades", className: "border-amber-200 bg-amber-50 text-amber-700" },
-        { label: "91% confidence", detail: "Strong signal match", className: "border-[#9DFF7A]/50 bg-[#ecffe6] text-[#2f7d3c]" },
+        { label: "91% confidence", detail: "Strong signal match", className: "border-[#FF7BAC]/50 bg-[#FFF0F7] text-[#7555DA]" },
       ]
     : [
         { label: "Market feed live", detail: `BTC volatility ${currentDayRecord?.marketVolatility ?? "+18%"}`, className: "border-amber-200 bg-amber-50 text-amber-700" },
-        { label: "Devices connected", detail: "0 sources", className: "border-[#dce6d9] bg-white text-[#657365]" },
-        { label: "Personal confidence", detail: "0%", className: "border-[#dce6d9] bg-white text-[#657365]" },
+        { label: "Devices connected", detail: "0 sources", className: "border-[#E1DAEF] bg-white text-[#756A82]" },
+        { label: "Personal confidence", detail: "0%", className: "border-[#E1DAEF] bg-white text-[#756A82]" },
       ];
   const guardianEvidence = currentDayRecord
     ? currentDayRecord.guardianEvidence
@@ -2880,6 +2937,41 @@ export default function Web3HealthPage() {
   ]);
 
   useEffect(() => {
+    if (
+      !walletAddress ||
+      !window.ethereum ||
+      !chogGuardian ||
+      chogGuardian.mode !== "wallet" ||
+      chogGuardian.image !== chogGuardianImage
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const refreshGuardianArtwork = async () => {
+      try {
+        const provider = new BrowserProvider(window.ethereum as Eip1193Provider);
+        const collection = new Contract(chogGenesisContractAddress, chogGenesisAbi, provider);
+        const token = await loadOwnedChogToken(collection, chogGuardian.tokenId);
+        if (!cancelled && token.image !== chogGuardianImage) {
+          setChogGuardian((current) =>
+            current?.tokenId === token.tokenId
+              ? { ...current, label: token.label, image: token.image }
+              : current,
+          );
+        }
+      } catch {
+        // The local mascot remains a fallback until the next successful metadata request.
+      }
+    };
+
+    void refreshGuardianArtwork();
+    return () => {
+      cancelled = true;
+    };
+  }, [chogGuardian, walletAddress]);
+
+  useEffect(() => {
     if (!walletAddress || !hasLiveHealthContext || dailyRecords[todayKey]) {
       return;
     }
@@ -3180,7 +3272,7 @@ export default function Web3HealthPage() {
       tokenId: token.tokenId,
       label: token.label,
       mode: "wallet",
-      image: chogGuardianImage,
+      image: token.image,
       activatedAt: new Date().toISOString(),
     });
     setOwnedChogTokens([]);
@@ -3208,18 +3300,7 @@ export default function Web3HealthPage() {
       }
 
       const onchainTokenIds = ((await collection.tokensOfOwner(walletAddress)) as bigint[]).map(String);
-      const tokens = await Promise.all(
-        onchainTokenIds.map(async (tokenId) => {
-          const tokenUri = String(await collection.tokenURI(tokenId));
-          const metadataFile = tokenUri.match(/\/([^/?#]+)\.json(?:[?#].*)?$/i)?.[1];
-          const displayTokenId = metadataFile ? decodeURIComponent(metadataFile) : tokenId;
-          return {
-            tokenId,
-            displayTokenId,
-            label: `CHOG #${displayTokenId}`,
-          } satisfies OwnedChogToken;
-        }),
-      );
+      const tokens = await Promise.all(onchainTokenIds.map((tokenId) => loadOwnedChogToken(collection, tokenId)));
       tokens.sort((left, right) => Number(left.displayTokenId) - Number(right.displayTokenId));
 
       if (tokens.length !== Number(balance)) {
@@ -3288,7 +3369,7 @@ export default function Web3HealthPage() {
       window.setTimeout(() => setGuardianClaimState(""), 1800);
     } catch (error) {
       setGuardianClaimState("");
-      setChogActivationError(error instanceof Error ? error.message : "The weekly proof claim was cancelled.");
+      setChogActivationError(formatWalletTransactionError(error));
     }
   };
 
@@ -3334,66 +3415,104 @@ export default function Web3HealthPage() {
 
   if (!walletAddress) {
     return (
-      <main className="min-h-screen overflow-hidden bg-[#F3F0FF] text-[#21143A]">
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_22%_0%,rgba(157,255,122,0.32),transparent_26rem),radial-gradient(circle_at_78%_12%,rgba(131,110,249,0.38),transparent_32rem),linear-gradient(180deg,#FCFBFF,#EEE9FF_54%,#F9F7FF)]" />
-        <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-10">
-          <motion.div
-            initial={{ opacity: 0, y: 18, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full overflow-hidden rounded-[3rem] border border-[#DDD4F4] bg-white/72 p-5 shadow-[0_42px_150px_rgba(52,35,92,0.2)] backdrop-blur-3xl sm:p-8"
-          >
-            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.94),rgba(237,231,255,0.72)_48%,rgba(225,255,215,0.58))]" />
-            <div className="absolute left-1/2 top-1/2 size-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-trace-purple/20 blur-3xl" />
+      <main className="min-h-[100svh] overflow-hidden bg-[#12091F] text-white">
+        <section className="relative isolate min-h-[100svh] overflow-hidden">
+          <Image
+            src={chogLoginHeroImage}
+            alt="Chog Guardian holding a Chog card in a moonlit Monad world"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover object-[67%_center] sm:object-[64%_center]"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,6,20,0.98)_0%,rgba(17,8,31,0.94)_32%,rgba(25,12,46,0.62)_57%,rgba(25,12,46,0.1)_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(9,4,16,0.5)_0%,transparent_27%,transparent_68%,rgba(9,4,16,0.72)_100%)]" />
+          <div className="absolute inset-x-0 top-0 h-px bg-white/24" />
 
-            <div className="relative min-h-[40rem] overflow-hidden rounded-[2.45rem] border border-white/20 bg-[#171022] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_30%,rgba(157,255,122,0.18),transparent_24rem),radial-gradient(circle_at_78%_64%,rgba(131,110,249,0.34),transparent_26rem)]" />
-              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/36 to-transparent" />
-
-              <div className="relative flex min-h-[40rem] max-w-5xl flex-col justify-between p-7 sm:p-10 lg:p-12">
-                <div className="flex items-center gap-3">
-                  <BrandMark className="size-13" />
-                  <div>
-                    <p className="text-sm font-semibold tracking-[0.26em] text-white/82">HEALTH TRACE</p>
-                    <p className="text-sm font-medium text-trace-green/72">Chog Guardian</p>
-                  </div>
-                </div>
-
-                <div className="py-14">
-                  <h1 className="max-w-5xl text-[clamp(3.8rem,7.6vw,8.1rem)] font-medium leading-[0.86] tracking-normal">
-                    Own your
-                    <br />
-                    <span className="whitespace-nowrap">health context.</span>
-                  </h1>
-                  <p className="mt-8 max-w-2xl text-xl leading-9 text-white/62">
-                    Connect your wallet to restore Health Trace, or create a new private account with no health context shown until you choose what to sync.
-                  </p>
-                </div>
-
+          <div className="relative mx-auto flex min-h-[100svh] w-full max-w-[92rem] flex-col px-5 py-5 sm:px-8 sm:py-7 lg:px-12 lg:py-9">
+            <header className="flex items-center justify-between gap-5">
+              <div className="flex items-center gap-3.5">
+                <BrandMark className="size-12 sm:size-14" />
                 <div>
-                  <div className="grid max-w-3xl gap-4 sm:grid-cols-2">
-                    <Button
-                      onClick={connectWallet}
-                      disabled={isWalletConnecting}
-                      className="h-16 rounded-full bg-trace-green px-8 text-base font-semibold text-[#071006] shadow-[0_18px_54px_rgba(149,255,122,0.28)] hover:bg-[#a7ff84]"
-                    >
-                      <Wallet className="mr-2 size-5" />
-                      {isWalletConnecting ? "Connecting..." : "Create account"}
-                    </Button>
-                    <Button
-                      onClick={connectWallet}
-                      disabled={isWalletConnecting}
-                      className="h-16 rounded-full border border-white/18 bg-white/[0.08] px-8 text-base font-semibold text-white hover:bg-white/[0.13]"
-                    >
-                      Log in
-                      <ArrowRight className="ml-2 size-5" />
-                    </Button>
-                  </div>
-                  {walletError ? <p className="mt-5 max-w-2xl text-sm leading-6 text-rose-200">{walletError}</p> : null}
+                  <p className="text-sm font-semibold tracking-normal text-white">HEALTH TRACE</p>
+                  <p className="mt-0.5 text-sm font-medium text-trace-green">Chog Guardian</p>
                 </div>
               </div>
+              <div className="hidden items-center gap-2 border-l border-white/18 pl-5 text-xs font-semibold uppercase tracking-normal text-white/58 sm:flex">
+                <span className="size-2 rounded-full bg-trace-green shadow-[0_0_16px_rgba(255,123,172,0.9)]" />
+                Monad mainnet
+              </div>
+            </header>
+
+            <motion.div
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.82, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-1 flex-col justify-end pb-6 pt-24 sm:pb-9 sm:pt-28 lg:justify-center lg:pb-0 lg:pt-14"
+            >
+              <div className="max-w-[47rem]">
+                <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-normal text-trace-green">
+                  <ShieldCheck className="size-4" />
+                  Wallet-gated health intelligence
+                </div>
+                <h1 className="mt-6 text-[2.3rem] font-medium leading-[0.88] tracking-normal min-[360px]:text-[2.6rem] min-[430px]:text-5xl sm:text-7xl lg:text-[6.5rem] xl:text-[7.5rem]">
+                  Own your
+                  <span className="block whitespace-nowrap text-trace-green">health context.</span>
+                </h1>
+                <p className="mt-7 max-w-2xl text-base leading-7 text-white/70 sm:text-lg sm:leading-8">
+                  Your private health signals shape a calmer Web3 routine. Your Chog turns the actions you complete into Care XP and onchain recovery proofs.
+                </p>
+
+                <div className="mt-9 grid max-w-2xl gap-3 sm:grid-cols-2">
+                  <Button
+                    onClick={connectWallet}
+                    disabled={isWalletConnecting}
+                    className="h-16 rounded-full bg-trace-green px-7 text-base font-semibold text-[#130B20] shadow-[0_18px_58px_rgba(255,123,172,0.24)] transition hover:-translate-y-0.5 hover:bg-[#FF9DCA]"
+                  >
+                    <Wallet className="mr-2 size-5" />
+                    {isWalletConnecting ? "Connecting wallet..." : "Create account"}
+                  </Button>
+                  <Button
+                    onClick={connectWallet}
+                    disabled={isWalletConnecting}
+                    className="h-16 rounded-full border border-white/32 bg-[#170D26]/[0.52] px-7 text-base font-semibold text-white backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-white/60 hover:bg-white/[0.12]"
+                  >
+                    Log in with wallet
+                    <ArrowRight className="ml-2 size-5" />
+                  </Button>
+                </div>
+                {walletError ? (
+                  <p className="mt-5 max-w-2xl border-l-2 border-rose-300 pl-4 text-sm leading-6 text-rose-100">
+                    {walletError}
+                  </p>
+                ) : null}
+
+                <div className="mt-10 grid max-w-2xl grid-cols-3 border-t border-white/18 pt-5">
+                  {[
+                    [LockKeyhole, "Private", "Signals stay yours"],
+                    [Zap, "Care XP", "Healthy actions evolve"],
+                    [BadgeCheck, "Onchain", "Proof without raw data"],
+                  ].map(([Icon, label, detail]) => {
+                    const SignalIcon = Icon as typeof LockKeyhole;
+                    return (
+                      <div key={String(label)} className="pr-3 sm:pr-6">
+                        <SignalIcon className="size-4 text-trace-green" />
+                        <p className="mt-2 text-sm font-semibold text-white">{String(label)}</p>
+                        <p className="mt-1 text-[0.68rem] leading-4 text-white/46 sm:text-xs">{String(detail)}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.div>
+
+            <div className="hidden justify-end border-t border-white/14 pt-4 text-right lg:flex">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-normal text-trace-green">Chog Guardian</p>
+                <p className="mt-1 text-sm text-white/54">Your recovery companion on Monad.</p>
+              </div>
             </div>
-          </motion.div>
+          </div>
         </section>
       </main>
     );
@@ -3402,7 +3521,7 @@ export default function Web3HealthPage() {
   if (!isDemoAccount && !displayName.trim()) {
     return (
       <main className="min-h-screen overflow-hidden bg-[#F3F0FF] text-[#21143A]">
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_28%_0%,rgba(157,255,122,0.28),transparent_27rem),radial-gradient(circle_at_75%_12%,rgba(131,110,249,0.34),transparent_30rem),linear-gradient(180deg,#FCFBFF,#EEE9FF_54%,#F9F7FF)]" />
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_28%_0%,rgba(255,123,172,0.28),transparent_27rem),radial-gradient(circle_at_75%_12%,rgba(131,110,249,0.34),transparent_30rem),linear-gradient(180deg,#FCFBFF,#EEE9FF_54%,#F9F7FF)]" />
         <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center px-6 py-10">
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.985 }}
@@ -3446,7 +3565,7 @@ export default function Web3HealthPage() {
                 <Button
                   type="submit"
                   disabled={!pendingDisplayName.trim()}
-                  className="h-16 rounded-full bg-trace-green px-9 text-base font-semibold text-[#071006] shadow-[0_18px_54px_rgba(149,255,122,0.24)] hover:bg-[#a7ff84] disabled:opacity-45"
+                  className="h-16 rounded-full bg-trace-green px-9 text-base font-semibold text-[#130B20] shadow-[0_18px_54px_rgba(255,123,172,0.24)] hover:bg-[#FF9DCA] disabled:opacity-45"
                 >
                   Continue
                   <ArrowRight className="ml-2 size-5" />
@@ -3523,7 +3642,7 @@ export default function Web3HealthPage() {
                   type="button"
                   onClick={discoverChogGuardian}
                   disabled={isDiscoveringChog}
-                  className="h-14 rounded-full bg-trace-green px-6 font-semibold text-[#071006] hover:bg-[#adff91]"
+                  className="h-14 rounded-full bg-trace-green px-6 font-semibold text-[#130B20] hover:bg-[#FF9DCA]"
                 >
                   {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
                   {isDiscoveringChog ? "Scanning Monad..." : "Detect my Chog NFT"}
@@ -3557,7 +3676,7 @@ export default function Web3HealthPage() {
 
   return (
     <main className="min-h-screen bg-[#F7F5FC] text-[#21143A]">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_36%_-14%,rgba(157,255,122,0.22),transparent_34rem),radial-gradient(circle_at_96%_14%,rgba(131,110,249,0.3),transparent_34rem),linear-gradient(180deg,#FBFAFF,#F0ECFA_48%,#FAF9FD)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_36%_-14%,rgba(255,123,172,0.22),transparent_34rem),radial-gradient(circle_at_96%_14%,rgba(131,110,249,0.3),transparent_34rem),linear-gradient(180deg,#FBFAFF,#F0ECFA_48%,#FAF9FD)]" />
 
       <div className="relative z-10 mx-auto flex w-full max-w-[1520px] gap-4 px-3 py-3 sm:px-5 sm:py-5 lg:gap-6 lg:px-6 lg:py-6">
         <aside className="sticky top-6 hidden h-[calc(100vh-3rem)] w-72 shrink-0 flex-col rounded-[2rem] border border-[#DED6EE] bg-white/76 p-5 shadow-[0_28px_90px_rgba(52,35,92,0.1)] backdrop-blur-2xl lg:flex">
@@ -3616,7 +3735,7 @@ export default function Web3HealthPage() {
                   <p className="truncate text-xs font-medium text-[#7555DA]">Chog Guardian</p>
                 </div>
               </div>
-              <span className="shrink-0 rounded-full border border-[#d9e1d7] bg-white/70 px-3 py-1 text-[0.68rem] text-[#526152]">
+              <span className="shrink-0 rounded-full border border-[#E1DAEC] bg-white/70 px-3 py-1 text-[0.68rem] text-[#5F526F]">
                 Synced
               </span>
             </div>
@@ -3780,7 +3899,7 @@ export default function Web3HealthPage() {
                     <section className="relative overflow-hidden rounded-[2rem] bg-[#21143A] p-5 text-white shadow-[0_28px_80px_rgba(52,35,92,0.3)]">
                       <motion.div
                         aria-hidden
-                        className="absolute -right-16 -top-16 size-48 rounded-full bg-[#9DFF7A]/24 blur-3xl"
+                        className="absolute -right-16 -top-16 size-48 rounded-full bg-[#FF7BAC]/24 blur-3xl"
                         animate={{ opacity: [0.45, 0.8, 0.45], scale: [0.92, 1.08, 0.92] }}
                         transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
                       />
@@ -3795,7 +3914,7 @@ export default function Web3HealthPage() {
                               <span className="mt-1 block whitespace-nowrap text-[1.72rem] leading-[0.95]">Don&apos;t burn out.</span>
                             </h1>
                           </div>
-                          <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5 shadow-[0_18px_55px_rgba(157,255,122,0.18)]">
+                          <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#FF7BAC_0deg,#FF7BAC_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5 shadow-[0_18px_55px_rgba(255,123,172,0.18)]">
                             <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#21143A]">
                               <p className="text-2xl font-medium leading-none">{healthScore}</p>
                               <p className="mt-1 text-[0.58rem] text-trace-green">Score</p>
@@ -3828,7 +3947,7 @@ export default function Web3HealthPage() {
                         onClick={() => setActiveTab("Rewards")}
                         className="grid w-full grid-cols-[6.5rem_1fr] gap-4 overflow-hidden rounded-[1.75rem] bg-[#21143a] p-3 text-left text-white shadow-[0_22px_70px_rgba(33,20,58,0.22)]"
                       >
-                        <GuardianArtwork className="aspect-square" />
+                        <GuardianArtwork className="aspect-square" src={chogGuardian.image} alt={chogGuardian.label} />
                         <div className="min-w-0 py-2 pr-2">
                           <div className="flex items-center justify-between gap-2">
                             <p className="truncate text-xs font-semibold uppercase tracking-[0.18em] text-violet-200/72">
@@ -3847,15 +3966,15 @@ export default function Web3HealthPage() {
                   ) : null}
 
                   <Reveal delay={0.06}>
-                    <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_22px_70px_rgba(16,21,16,0.08)] backdrop-blur-2xl">
+                    <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_22px_70px_rgba(16,21,16,0.08)] backdrop-blur-2xl">
                       <div className="mb-4 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#607260]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#6F617F]">
                             Live Signals
                           </p>
                           <h2 className="mt-1 text-2xl font-medium leading-tight">Your Health Trace state</h2>
                         </div>
-                        <span className="rounded-full bg-[#101510] px-3 py-1 text-xs font-medium text-trace-green">
+                        <span className="rounded-full bg-[#171022] px-3 py-1 text-xs font-medium text-trace-green">
                           Live
                         </span>
                       </div>
@@ -3871,23 +3990,23 @@ export default function Web3HealthPage() {
                               transition={{ duration: 0.42, delay: index * 0.04 }}
                               className={`rounded-[1.35rem] border p-3 shadow-[0_14px_40px_rgba(16,21,16,0.045)] ${
                                 index === 0
-                                  ? "col-span-2 border-[#cfe0cb] bg-[#effbe9]"
-                                  : "border-[#e1e9df] bg-[#fbfdf9]"
+                                  ? "col-span-2 border-[#D9D0F1] bg-[#F8F0FF]"
+                                  : "border-[#E8E2F2] bg-[#FCFAFF]"
                               }`}
                             >
                               <div className="flex items-start justify-between gap-3">
-                                <div className="flex size-9 items-center justify-center rounded-2xl bg-white text-[#3a8f4d] shadow-[0_10px_25px_rgba(16,21,16,0.05)]">
+                                <div className="flex size-9 items-center justify-center rounded-2xl bg-white text-[#836EF9] shadow-[0_10px_25px_rgba(16,21,16,0.05)]">
                                   <Icon className={`size-4 ${signal.tone}`} />
                                 </div>
-                                <span className="rounded-full border border-[#dce6d9] bg-white/72 px-2 py-1 text-[0.62rem] text-[#657365]">
+                                <span className="rounded-full border border-[#E1DAEF] bg-white/72 px-2 py-1 text-[0.62rem] text-[#756A82]">
                                   {index === 0 ? "Primary" : "Signal"}
                                 </span>
                               </div>
-                              <p className="mt-4 text-xs text-[#667466]">{signal.label}</p>
-                              <p className={`${index === 0 ? "text-4xl" : "text-2xl"} mt-1 font-medium leading-none text-[#101510]`}>
+                              <p className="mt-4 text-xs text-[#756A82]">{signal.label}</p>
+                              <p className={`${index === 0 ? "text-4xl" : "text-2xl"} mt-1 font-medium leading-none text-[#171022]`}>
                                 {signal.value}
                               </p>
-                              <p className="mt-2 min-h-8 text-xs leading-4 text-[#6d786d]">{signal.detail}</p>
+                              <p className="mt-2 min-h-8 text-xs leading-4 text-[#7A6F86]">{signal.detail}</p>
                               {index === 0 ? (
                                 <div className="mt-3 h-10">
                                   <MiniChart data={signal.chart} />
@@ -3901,14 +4020,14 @@ export default function Web3HealthPage() {
                   </Reveal>
 
                   <Reveal delay={0.1}>
-                    <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-[#f8fbf6] p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
+                    <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-[#FAF7FF] p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
                       <div className="flex items-center gap-3">
-                        <div className="flex size-11 items-center justify-center rounded-2xl bg-[#101510] text-trace-green">
+                        <div className="flex size-11 items-center justify-center rounded-2xl bg-[#171022] text-trace-green">
                           <Sparkles size={18} />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-[#172117]">Guardian protocol</p>
-                          <p className="text-xs text-[#6d786d]">For the next 90 minutes</p>
+                          <p className="text-sm font-medium text-[#21182C]">Guardian protocol</p>
+                          <p className="text-xs text-[#7A6F86]">For the next 90 minutes</p>
                         </div>
                       </div>
                       <div className="mt-4 space-y-2">
@@ -3921,9 +4040,9 @@ export default function Web3HealthPage() {
                             key={item}
                             type="button"
                             onClick={() => setActiveTab(target as HealthTab)}
-                            className="flex w-full gap-3 rounded-[1.15rem] border border-[#e1e9df] bg-white/78 px-3 py-3 text-left text-sm leading-5 text-[#304030] transition hover:border-[#cfe0cb] hover:bg-white"
+                            className="flex w-full gap-3 rounded-[1.15rem] border border-[#E8E2F2] bg-white/78 px-3 py-3 text-left text-sm leading-5 text-[#3B2D4A] transition hover:border-[#D9D0F1] hover:bg-white"
                           >
-                            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#9DFF7A] text-xs font-semibold text-[#101510]">
+                            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#FF7BAC] text-xs font-semibold text-[#171022]">
                               {index + 1}
                             </span>
                             {item}
@@ -3957,24 +4076,24 @@ export default function Web3HealthPage() {
                               <p className="mb-2 text-center text-[0.5rem] font-semibold uppercase tracking-[0.18em] text-white/38">
                                 Health Trace Score
                               </p>
-                              <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_235deg,#836EF9_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5">
+                              <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-[conic-gradient(#FF7BAC_0deg,#FF7BAC_235deg,#836EF9_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5">
                                 <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#21143A]">
                                   <p className="text-2xl font-medium leading-none">{healthScore}</p>
                                   <p className="mt-1 text-[0.62rem] text-trace-green">{healthScoreLabel}</p>
                                 </div>
                               </div>
                             </div>
-                            <div className="rounded-[1.35rem] border border-[#dfe7dc] bg-[#f7faf5] p-3 text-center">
-                              <p className="text-[0.68rem] text-[#6b756b]">Current state</p>
-                              <p className="mt-1 text-lg font-medium leading-tight text-[#172117]">
+                            <div className="rounded-[1.35rem] border border-[#E5DFF2] bg-[#FAF7FF] p-3 text-center">
+                              <p className="text-[0.68rem] text-[#766B80]">Current state</p>
+                              <p className="mt-1 text-lg font-medium leading-tight text-[#21182C]">
                                 {currentState}
                               </p>
                             </div>
                           </div>
                         </div>
 
-                        <div className="mt-4 h-32 overflow-hidden rounded-[1.5rem] border border-[#e0e8dd] bg-[#fbfdf9] px-3 pb-3 pt-2 sm:h-40 sm:px-4">
-                          <div className="mb-1 flex items-center justify-between text-[0.68rem] text-[#7a867a]">
+                        <div className="mt-4 h-32 overflow-hidden rounded-[1.5rem] border border-[#E5DFF0] bg-[#FCFAFF] px-3 pb-3 pt-2 sm:h-40 sm:px-4">
+                          <div className="mb-1 flex items-center justify-between text-[0.68rem] text-[#85788F]">
                             <span>Week</span>
                             <span>{weeklyRangeLabel}</span>
                           </div>
@@ -3987,13 +4106,13 @@ export default function Web3HealthPage() {
                                 minTickGap={0}
                                 padding={{ left: 8, right: 8 }}
                                 tickLine={false}
-                                tick={{ fill: "#7a867a", fontSize: 11 }}
+                                tick={{ fill: "#85788F", fontSize: 11 }}
                               />
                               <YAxis hide domain={[-12, 100]} />
                               <Tooltip
-                                cursor={{ stroke: "#b7c4b2", strokeDasharray: "4 6" }}
+                                cursor={{ stroke: "#C9BED8", strokeDasharray: "4 6" }}
                                 contentStyle={{
-                                  border: "1px solid #dfe7dc",
+                                  border: "1px solid #E5DFF2",
                                   borderRadius: 18,
                                   boxShadow: "0 18px 50px rgba(16,21,16,0.1)",
                                 }}
@@ -4045,26 +4164,26 @@ export default function Web3HealthPage() {
                             <div className="rounded-full border border-white/12 bg-white/[0.07] px-3 py-1 text-xs text-trace-green">Lv {guardianLevel}</div>
                           </button>
                         ) : null}
-                        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-[#607260]">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-[#6F617F]">
                           Today&apos;s Health Trace Brief
                         </p>
                         <div className="space-y-2.5">
                           {dashboardBriefItems.map((item) => (
-                            <div key={item.title} className="rounded-[1.35rem] border border-[#e1e9df] bg-[#f9fbf8] p-3">
+                            <div key={item.title} className="rounded-[1.35rem] border border-[#E8E2F2] bg-[#FBF8FF] p-3">
                               <div className="flex gap-3">
                                 <span className={`mt-1.5 size-2.5 rounded-full ${item.color}`} />
                                 <div>
-                                  <p className="text-xs font-medium text-[#697869]">{item.status}</p>
-                                  <p className="mt-1 text-base font-medium text-[#172117]">{item.title}</p>
-                                  <p className="mt-1 text-xs leading-5 text-[#657365]">{item.detail}</p>
+                                  <p className="text-xs font-medium text-[#766A82]">{item.status}</p>
+                                  <p className="mt-1 text-base font-medium text-[#21182C]">{item.title}</p>
+                                  <p className="mt-1 text-xs leading-5 text-[#756A82]">{item.detail}</p>
                                 </div>
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div className="mt-3 rounded-[1.35rem] border border-[#dce6d9] bg-[#eef8ea] p-3">
-                          <p className="text-xs font-semibold text-[#2f7d3c]">Guardian Recommendation</p>
-                          <p className="mt-1.5 text-sm font-medium leading-6 text-[#253525]">
+                        <div className="mt-3 rounded-[1.35rem] border border-[#E1DAEF] bg-[#F7F0FF] p-3">
+                          <p className="text-xs font-semibold text-[#7555DA]">Guardian Recommendation</p>
+                          <p className="mt-1.5 text-sm font-medium leading-6 text-[#302345]">
                             {guardianRecommendation}
                           </p>
                         </div>
@@ -4073,9 +4192,9 @@ export default function Web3HealthPage() {
                   </div>
 
                   <Reveal delay={0.14} className="min-h-0">
-                    <section className="flex h-full min-h-0 flex-col rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-5">
+                    <section className="flex h-full min-h-0 flex-col rounded-[1.6rem] border border-[#E5DFF2] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-5">
                       <div className="mb-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#607260]">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#6F617F]">
                           Live Signals
                         </p>
                         <h2 className="mt-1 text-2xl font-medium">Health signals for onchain behavior</h2>
@@ -4093,27 +4212,27 @@ export default function Web3HealthPage() {
 
               {activeTab === "Guardian" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="overflow-hidden rounded-[1.6rem] border border-[#cfe0cb] bg-white/88 shadow-[0_36px_120px_rgba(45,92,52,0.12)] backdrop-blur-2xl sm:rounded-[2.25rem]">
+                  <section className="overflow-hidden rounded-[1.6rem] border border-[#D9D0F1] bg-white/88 shadow-[0_36px_120px_rgba(45,92,52,0.12)] backdrop-blur-2xl sm:rounded-[2.25rem]">
                     <button
                       type="button"
                       onClick={() => setGuardianOpen((open) => !open)}
-                      className="relative w-full overflow-hidden p-4 text-left transition hover:bg-[#f7faf5] sm:p-7"
+                      className="relative w-full overflow-hidden p-4 text-left transition hover:bg-[#FAF7FF] sm:p-7"
                     >
                       <motion.div
                         aria-hidden
-                        className="absolute right-0 top-8 size-52 rounded-full bg-[#9DFF7A]/18 blur-3xl sm:right-10 sm:size-72"
+                        className="absolute right-0 top-8 size-52 rounded-full bg-[#FF7BAC]/18 blur-3xl sm:right-10 sm:size-72"
                         animate={{ opacity: [0.42, 0.82, 0.42], scale: [0.9, 1.05, 0.9] }}
                         transition={{ duration: 5.6, repeat: Infinity, ease: "easeInOut" }}
                       />
                       <div className="relative grid gap-8 xl:grid-cols-[1fr_20rem]">
                         <div>
-                          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#4b7d4d]">
+                          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#7555DA]">
                             CHOG GUARDIAN
                           </p>
-                          <h2 className="mt-4 text-[clamp(2.05rem,10vw,4.9rem)] font-medium leading-[0.95] tracking-normal text-[#101510] sm:text-[clamp(2.3rem,4vw,4.9rem)]">
+                          <h2 className="mt-4 text-[clamp(2.05rem,10vw,4.9rem)] font-medium leading-[0.95] tracking-normal text-[#171022] sm:text-[clamp(2.3rem,4vw,4.9rem)]">
                             {guardianTitle}
                           </h2>
-                          <p className="mt-4 max-w-4xl text-base leading-7 text-[#425042] sm:mt-5 sm:text-xl sm:leading-9">
+                          <p className="mt-4 max-w-4xl text-base leading-7 text-[#51445F] sm:mt-5 sm:text-xl sm:leading-9">
                             {guardianCopy}
                           </p>
                           <div className="mt-5 flex flex-wrap gap-2 sm:mt-6 sm:gap-3">
@@ -4128,7 +4247,7 @@ export default function Web3HealthPage() {
                             ))}
                           </div>
                         </div>
-                        <div className="rounded-[1.5rem] border border-[#dce6d9] bg-[#101510] p-5 text-white shadow-[0_24px_70px_rgba(16,21,16,0.2)]">
+                        <div className="rounded-[1.5rem] border border-[#E1DAEF] bg-[#171022] p-5 text-white shadow-[0_24px_70px_rgba(16,21,16,0.2)]">
                           <div className="flex items-start gap-4">
                             <GuardianArtwork className="size-24 shrink-0" />
                             <div>
@@ -4159,20 +4278,20 @@ export default function Web3HealthPage() {
                           animate={{ height: "auto", opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
                           transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
-                          className="overflow-hidden border-t border-[#e1e9df]"
+                          className="overflow-hidden border-t border-[#E8E2F2]"
                         >
                           <div className="grid gap-4 p-4 sm:gap-5 sm:p-7 xl:grid-cols-[1fr_0.7fr]">
                             <div className="grid gap-3 md:grid-cols-2 sm:gap-4">
                               {guardianEvidence.map(([title, detail, href]) => (
-                                <div key={title} className="rounded-[1.35rem] border border-[#e1e9df] bg-[#f8fbf6] p-4 sm:rounded-3xl sm:p-5">
-                                  <p className="text-sm font-medium text-[#5d6b5d]">{title}</p>
-                                  <p className="mt-2 text-base font-medium leading-6 text-[#172117] sm:text-lg sm:leading-7">{detail}</p>
+                                <div key={title} className="rounded-[1.35rem] border border-[#E8E2F2] bg-[#FAF7FF] p-4 sm:rounded-3xl sm:p-5">
+                                  <p className="text-sm font-medium text-[#6C6079]">{title}</p>
+                                  <p className="mt-2 text-base font-medium leading-6 text-[#21182C] sm:text-lg sm:leading-7">{detail}</p>
                                   {href ? (
                                     <a
                                       href={href}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className="mt-3 inline-flex rounded-full border border-[#dce6d9] bg-white px-3 py-1.5 text-xs font-medium text-[#2f7d3c] transition hover:border-[#9DFF7A]"
+                                      className="mt-3 inline-flex rounded-full border border-[#E1DAEF] bg-white px-3 py-1.5 text-xs font-medium text-[#7555DA] transition hover:border-[#FF7BAC]"
                                     >
                                       Open live volatility
                                     </a>
@@ -4180,7 +4299,7 @@ export default function Web3HealthPage() {
                                 </div>
                               ))}
                             </div>
-                            <div className="rounded-[1.75rem] border border-[#dce6d9] bg-[#101510] p-5 text-white">
+                            <div className="rounded-[1.75rem] border border-[#E1DAEF] bg-[#171022] p-5 text-white">
                               <p className="text-sm font-medium text-trace-green">Recommended protocol</p>
                               <p className="mt-2 text-xs leading-5 text-white/46">
                                 Daily guardian actions. Tap each item when complete so Trace can update your context.
@@ -4196,7 +4315,7 @@ export default function Web3HealthPage() {
                                     }}
                                     className="flex w-full items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-left text-sm text-white/72 transition hover:bg-white/[0.075]"
                                   >
-                                    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-trace-green text-xs font-semibold text-[#101510]">
+                                    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-trace-green text-xs font-semibold text-[#171022]">
                                       {index + 1}
                                     </span>
                                     <span>
@@ -4218,9 +4337,9 @@ export default function Web3HealthPage() {
 
               {activeTab === "Market Stress" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="overflow-hidden rounded-[2rem] border border-[#dfe7dc] bg-white/78 shadow-[0_32px_110px_rgba(16,21,16,0.09)] backdrop-blur-2xl">
+                  <section className="overflow-hidden rounded-[2rem] border border-[#E5DFF2] bg-white/78 shadow-[0_32px_110px_rgba(16,21,16,0.09)] backdrop-blur-2xl">
                     <div className="grid xl:grid-cols-[1.03fr_0.97fr]">
-                      <div className="relative overflow-hidden bg-[#101510] p-7 text-white">
+                      <div className="relative overflow-hidden bg-[#171022] p-7 text-white">
                         <motion.div
                           aria-hidden
                           className="absolute -right-24 -top-24 size-80 rounded-full bg-amber-300/16 blur-3xl"
@@ -4245,8 +4364,8 @@ export default function Web3HealthPage() {
                           </p>
 
                           <div className="mt-8 grid grid-cols-[13rem_1fr] items-center gap-8">
-                            <div className="flex size-52 items-center justify-center rounded-full bg-[conic-gradient(#fbbf24_0deg,#9DFF7A_224deg,rgba(255,255,255,0.1)_224deg)] p-2 shadow-[0_0_90px_rgba(251,191,36,0.18)]">
-                              <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510] ring-1 ring-white/10">
+                            <div className="flex size-52 items-center justify-center rounded-full bg-[conic-gradient(#fbbf24_0deg,#FF7BAC_224deg,rgba(255,255,255,0.1)_224deg)] p-2 shadow-[0_0_90px_rgba(251,191,36,0.18)]">
+                              <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#171022] ring-1 ring-white/10">
                                 <p className="text-7xl font-medium leading-none">{marketStressScore}</p>
                                 <p className="mt-2 text-sm font-medium text-amber-200">{marketStressLabel}</p>
                               </div>
@@ -4274,26 +4393,26 @@ export default function Web3HealthPage() {
                       <div className="p-7">
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">
+                            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6F617F]">
                               Guardian protocol
                             </p>
-                            <h3 className="mt-2 text-3xl font-medium leading-tight text-[#101510]">
+                            <h3 className="mt-2 text-3xl font-medium leading-tight text-[#171022]">
                               Convert market pressure into safe behavior.
                             </h3>
                           </div>
-                          <div className="rounded-full bg-[#101510] px-4 py-2 text-sm font-medium text-trace-green">
+                          <div className="rounded-full bg-[#171022] px-4 py-2 text-sm font-medium text-trace-green">
                             {completedMarketActions.length} / {marketStressActions.length} done
                           </div>
                         </div>
 
-                        <div className="mt-6 rounded-[1.5rem] border border-[#dce6d9] bg-[#f8fbf6] p-5">
+                        <div className="mt-6 rounded-[1.5rem] border border-[#E1DAEF] bg-[#FAF7FF] p-5">
                           <div className="flex items-start gap-4">
                             <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
                               <CircleAlert size={20} />
                             </div>
                             <div>
-                              <p className="text-lg font-medium text-[#172117]">Why this matters now</p>
-                              <p className="mt-2 text-sm leading-6 text-[#687668]">
+                              <p className="text-lg font-medium text-[#21182C]">Why this matters now</p>
+                              <p className="mt-2 text-sm leading-6 text-[#746A80]">
                                 Volatility is above baseline while screen exposure is already high. Trace is not giving trading advice. It is protecting your decision state before impulse risk rises.
                               </p>
                             </div>
@@ -4310,16 +4429,16 @@ export default function Web3HealthPage() {
                                 onClick={() => toggleMarketAction(action.title)}
                                 className={`flex w-full items-start gap-4 rounded-[1.35rem] border p-4 text-left transition ${
                                   isDone
-                                    ? "border-[#101510] bg-[#101510] text-white shadow-[0_18px_55px_rgba(16,21,16,0.16)]"
-                                    : "border-[#e1e9df] bg-white text-[#172117] hover:border-[#cfe0cb] hover:bg-[#fbfdf9]"
+                                    ? "border-[#171022] bg-[#171022] text-white shadow-[0_18px_55px_rgba(16,21,16,0.16)]"
+                                    : "border-[#E8E2F2] bg-white text-[#21182C] hover:border-[#D9D0F1] hover:bg-[#FCFAFF]"
                                 }`}
                               >
-                                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-trace-green text-sm font-semibold text-[#101510]">
+                                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-trace-green text-sm font-semibold text-[#171022]">
                                   {isDone ? <Check size={15} strokeWidth={3} /> : index + 1}
                                 </span>
                                 <span>
                                   <span className="block text-base font-medium">{action.title}</span>
-                                  <span className={`mt-1 block text-sm leading-6 ${isDone ? "text-white/52" : "text-[#687668]"}`}>
+                                  <span className={`mt-1 block text-sm leading-6 ${isDone ? "text-white/52" : "text-[#746A80]"}`}>
                                     {action.detail}
                                   </span>
                                 </span>
@@ -4335,12 +4454,12 @@ export default function Web3HealthPage() {
 
               {activeTab === "Recovery" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="overflow-hidden rounded-[2rem] border border-[#dfe7dc] bg-white/78 shadow-[0_32px_110px_rgba(16,21,16,0.09)] backdrop-blur-2xl">
+                  <section className="overflow-hidden rounded-[2rem] border border-[#E5DFF2] bg-white/78 shadow-[0_32px_110px_rgba(16,21,16,0.09)] backdrop-blur-2xl">
                     <div className="relative grid gap-0 xl:grid-cols-[0.95fr_1.05fr]">
-                      <div className="relative overflow-hidden bg-[#101510] p-7 text-white">
+                      <div className="relative overflow-hidden bg-[#171022] p-7 text-white">
                         <motion.div
                           aria-hidden
-                          className="absolute -right-20 -top-24 size-72 rounded-full bg-[#9DFF7A]/20 blur-3xl"
+                          className="absolute -right-20 -top-24 size-72 rounded-full bg-[#FF7BAC]/20 blur-3xl"
                           animate={{ opacity: [0.36, 0.78, 0.36], scale: [0.9, 1.1, 0.9] }}
                           transition={{ duration: 6.2, repeat: Infinity, ease: "easeInOut" }}
                         />
@@ -4362,8 +4481,8 @@ export default function Web3HealthPage() {
                           </p>
 
                           <div className="mt-8 grid grid-cols-[12rem_1fr] items-center gap-8">
-                            <div className="flex size-48 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_302deg,rgba(255,255,255,0.1)_302deg)] p-2 shadow-[0_0_80px_rgba(157,255,122,0.2)]">
-                              <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510] ring-1 ring-white/10">
+                            <div className="flex size-48 items-center justify-center rounded-full bg-[conic-gradient(#FF7BAC_0deg,#FF7BAC_302deg,rgba(255,255,255,0.1)_302deg)] p-2 shadow-[0_0_80px_rgba(255,123,172,0.2)]">
+                              <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#171022] ring-1 ring-white/10">
                                 <p className="text-6xl font-medium leading-none">{recoveryScore}</p>
                                 <p className="mt-2 text-sm text-trace-green">Recovery readiness</p>
                               </div>
@@ -4398,14 +4517,14 @@ export default function Web3HealthPage() {
                       <div className="p-7">
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">
+                            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6F617F]">
                               Tonight protocol
                             </p>
-                            <h3 className="mt-2 text-3xl font-medium leading-tight text-[#101510]">
+                            <h3 className="mt-2 text-3xl font-medium leading-tight text-[#171022]">
                               Make recovery feel automatic.
                             </h3>
                           </div>
-                          <div className="flex size-12 items-center justify-center rounded-2xl bg-[#e9f9e4] text-[#2f7d3c]">
+                          <div className="flex size-12 items-center justify-center rounded-2xl bg-[#F5EDFF] text-[#7555DA]">
                             <Moon size={20} />
                           </div>
                         </div>
@@ -4457,15 +4576,15 @@ export default function Web3HealthPage() {
                             <motion.article
                               key={title}
                               whileHover={{ y: -4, scale: 1.01 }}
-                              className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-4 rounded-[1.45rem] border border-[#e1e9df] bg-[#fbfdf9] p-4 shadow-[0_14px_42px_rgba(16,21,16,0.04)]"
+                              className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-4 rounded-[1.45rem] border border-[#E8E2F2] bg-[#FCFAFF] p-4 shadow-[0_14px_42px_rgba(16,21,16,0.04)]"
                             >
-                              <p className="text-sm font-semibold text-[#2f7d3c]">{time}</p>
+                              <p className="text-sm font-semibold text-[#7555DA]">{time}</p>
                               <div>
-                                <p className="text-lg font-medium text-[#172117]">{title}</p>
-                                <p className="mt-1 text-sm leading-6 text-[#687668]">{detail}</p>
-                                <p className="mt-2 text-xs font-medium text-[#2f7d3c]">{signal}</p>
+                                <p className="text-lg font-medium text-[#21182C]">{title}</p>
+                                <p className="mt-1 text-sm leading-6 text-[#746A80]">{detail}</p>
+                                <p className="mt-2 text-xs font-medium text-[#7555DA]">{signal}</p>
                               </div>
-                              <span className="flex size-8 items-center justify-center rounded-full bg-[#eef5ec] text-xs font-semibold text-[#2f7d3c]">
+                              <span className="flex size-8 items-center justify-center rounded-full bg-[#F3EEFF] text-xs font-semibold text-[#7555DA]">
                                 {index + 1}
                               </span>
                             </motion.article>
@@ -4483,9 +4602,9 @@ export default function Web3HealthPage() {
                               ["Guardian note", "Connect data before personal guidance."],
                             ]
                         ).map(([title, detail]) => (
-                            <div key={title} className="rounded-[1.35rem] border border-[#dfe7dc] bg-[#f8fbf6] p-5">
-                              <p className="text-sm font-medium text-[#172117]">{title}</p>
-                              <p className="mt-2 text-sm leading-5 text-[#687668]">{detail}</p>
+                            <div key={title} className="rounded-[1.35rem] border border-[#E5DFF2] bg-[#FAF7FF] p-5">
+                              <p className="text-sm font-medium text-[#21182C]">{title}</p>
+                              <p className="mt-2 text-sm leading-5 text-[#746A80]">{detail}</p>
                             </div>
                           ))}
                         </div>
@@ -4497,10 +4616,10 @@ export default function Web3HealthPage() {
 
               {activeTab === "Eye Break" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7">
+                  <section className="rounded-[1.6rem] border border-[#E5DFF2] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7">
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                       <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">
+                        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6F617F]">
                           K-line Eye Break
                         </p>
                         <h2 className="mt-2 text-3xl font-medium leading-tight sm:text-4xl">Protect attention before it burns out.</h2>
@@ -4515,10 +4634,10 @@ export default function Web3HealthPage() {
                     </div>
                     <div className="mt-5 grid gap-3 md:grid-cols-3 sm:mt-6 sm:gap-4">
                       {eyeBreakMetrics.map((item) => (
-                        <div key={item.label} className="rounded-[1.5rem] border border-[#e1e9df] bg-[#fbfdf9] p-4 sm:p-5">
-                          <p className="text-sm text-[#667466]">{item.label}</p>
-                          <p className="mt-2 text-3xl font-medium text-[#101510] sm:mt-3 sm:text-4xl">{item.value}</p>
-                          <p className="mt-3 text-sm leading-6 text-[#687668]">{item.detail}</p>
+                        <div key={item.label} className="rounded-[1.5rem] border border-[#E8E2F2] bg-[#FCFAFF] p-4 sm:p-5">
+                          <p className="text-sm text-[#756A82]">{item.label}</p>
+                          <p className="mt-2 text-3xl font-medium text-[#171022] sm:mt-3 sm:text-4xl">{item.value}</p>
+                          <p className="mt-3 text-sm leading-6 text-[#746A80]">{item.detail}</p>
                         </div>
                       ))}
                     </div>
@@ -4528,15 +4647,15 @@ export default function Web3HealthPage() {
 
               {activeTab === "Journal" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="grid gap-4 rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7 xl:grid-cols-[0.85fr_1.15fr] xl:gap-6">
+                  <section className="grid gap-4 rounded-[1.6rem] border border-[#E5DFF2] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7 xl:grid-cols-[0.85fr_1.15fr] xl:gap-6">
                     <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">
+                      <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6F617F]">
                         FOMO / FUD Journal
                       </p>
                       <h2 className="mt-2 text-3xl font-medium leading-tight sm:text-4xl">
                         Not a mood tracker. A decision-state tracker.
                       </h2>
-                      <p className="mt-4 text-base leading-7 text-[#667466]">
+                      <p className="mt-4 text-base leading-7 text-[#756A82]">
                         Capture market-specific emotions so the Guardian knows when stress is
                         coming from volatility, losses, Discord noise, or airdrop fatigue.
                       </p>
@@ -4550,25 +4669,25 @@ export default function Web3HealthPage() {
                           key={entry.label}
                           type="button"
                           onClick={() => openJournalCheckIn(entry.label)}
-                          className="w-full rounded-[1.5rem] border border-[#e1e9df] bg-[#fbfdf9] p-4 text-left transition hover:border-[#cfe0cb] sm:p-5"
+                          className="w-full rounded-[1.5rem] border border-[#E8E2F2] bg-[#FCFAFF] p-4 text-left transition hover:border-[#D9D0F1] sm:p-5"
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div>
-                              <p className="text-sm text-[#667466]">{entry.label}</p>
-                              <p className="mt-2 text-2xl font-medium text-[#172117]">{selectedLevel ?? entry.value}</p>
+                              <p className="text-sm text-[#756A82]">{entry.label}</p>
+                              <p className="mt-2 text-2xl font-medium text-[#21182C]">{selectedLevel ?? entry.value}</p>
                             </div>
                             <span className={`rounded-full border px-3 py-1 text-xs ${
-                              selectedLevel ? "border-[#101510] bg-[#101510] text-white" : "border-[#dce6d9] bg-white text-[#657365]"
+                              selectedLevel ? "border-[#171022] bg-[#171022] text-white" : "border-[#E1DAEF] bg-white text-[#756A82]"
                             }`}>
                               {selectedLevel ? "Checked in" : "Check-in"}
                             </span>
                           </div>
-                          <p className="mt-3 text-sm leading-6 text-[#687668]">{response?.detail ?? entry.detail}</p>
-                          <p className="mt-3 text-sm font-medium text-[#2f7d3c]">{response?.action ?? entry.action}</p>
+                          <p className="mt-3 text-sm leading-6 text-[#746A80]">{response?.detail ?? entry.detail}</p>
+                          <p className="mt-3 text-sm font-medium text-[#7555DA]">{response?.action ?? entry.action}</p>
                         </button>
                         );
                       })}
-                      <div className="rounded-[1.5rem] border border-[#dce6d9] bg-[#101510] p-5 text-white">
+                      <div className="rounded-[1.5rem] border border-[#E1DAEF] bg-[#171022] p-5 text-white">
                         <p className="text-sm font-medium text-trace-green">Today&apos;s check-ins</p>
                         <p className="mt-2 text-xs leading-5 text-white/46">Complete these from the cards above. Each result updates your behavior context.</p>
                         <div className="mt-4 space-y-3">
@@ -4585,7 +4704,7 @@ export default function Web3HealthPage() {
                                     : "border-white/10 bg-white/[0.045] text-white/72 hover:bg-white/[0.075]"
                                 }`}
                               >
-                                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-trace-green text-xs font-semibold text-[#101510]">
+                                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-trace-green text-xs font-semibold text-[#171022]">
                                   {isDone ? <Check size={13} strokeWidth={3} /> : index + 1}
                                 </span>
                                 <span>
@@ -4604,21 +4723,21 @@ export default function Web3HealthPage() {
 
               {activeTab === "Proofs" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7">
+                  <section className="rounded-[1.6rem] border border-[#E5DFF2] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7">
                     <div className="mb-5 flex flex-col gap-4 xl:mb-6 xl:flex-row xl:items-end xl:justify-between">
                       <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">
+                        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6F617F]">
                           Proof of Healthy Action
                         </p>
                         <h2 className="mt-2 text-3xl font-medium leading-tight sm:text-4xl">
                           Prove actions, not health data.
                         </h2>
-                        <p className="mt-4 max-w-3xl text-base leading-7 text-[#667466]">
+                        <p className="mt-4 max-w-3xl text-base leading-7 text-[#756A82]">
                           Raw sleep, heart rate, and stress data stay private. The chain can record
                           that a healthy action was completed, without exposing the underlying signal.
                         </p>
                       </div>
-                      <div className="rounded-[1.5rem] border border-[#dce6d9] bg-[#101510] p-4 text-white sm:p-5 xl:w-80">
+                      <div className="rounded-[1.5rem] border border-[#E1DAEF] bg-[#171022] p-4 text-white sm:p-5 xl:w-80">
                         <p className="text-sm text-white/42">Current streak</p>
                         <p className="mt-2 text-4xl font-medium">{proofStreakLabel}</p>
                         <p className="mt-2 text-sm text-trace-green">Builder Balance Badge pending</p>
@@ -4626,7 +4745,7 @@ export default function Web3HealthPage() {
                     </div>
 
                     <div className="mb-5 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-                      <div className="overflow-hidden rounded-[1.65rem] border border-[#dce6d9] bg-[#101510] p-6 text-white shadow-[0_24px_80px_rgba(16,21,16,0.18)]">
+                      <div className="overflow-hidden rounded-[1.65rem] border border-[#E1DAEF] bg-[#171022] p-6 text-white shadow-[0_24px_80px_rgba(16,21,16,0.18)]">
                         <div className="flex items-start justify-between gap-4">
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-trace-green/70">
@@ -4647,16 +4766,16 @@ export default function Web3HealthPage() {
                           ))}
                         </div>
                       </div>
-                      <div className="grid gap-5 rounded-[1.65rem] border border-[#dce6d9] bg-[#f8fbf6] p-5 sm:grid-cols-[8rem_1fr] sm:p-6">
+                      <div className="grid gap-5 rounded-[1.65rem] border border-[#E1DAEF] bg-[#FAF7FF] p-5 sm:grid-cols-[8rem_1fr] sm:p-6">
                         <GuardianArtwork className="aspect-square self-start shadow-[0_18px_44px_rgba(33,20,58,0.16)]" />
                         <div>
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-[#172117]">Weekly Chog Recovery Proof</p>
-                            <span className={`rounded-full px-3 py-1 text-xs font-medium ${guardianWeeklyProofClaimed ? "bg-[#101510] text-trace-green" : guardianWeeklyProofReady ? "bg-[#e4f7dd] text-[#2f7d3c]" : "bg-[#edf1eb] text-[#687668]"}`}>
+                            <p className="text-sm font-medium text-[#21182C]">Weekly Chog Recovery Proof</p>
+                            <span className={`rounded-full px-3 py-1 text-xs font-medium ${guardianWeeklyProofClaimed ? "bg-[#171022] text-trace-green" : guardianWeeklyProofReady ? "bg-[#F2EAFF] text-[#7555DA]" : "bg-[#F0EBF7] text-[#746A80]"}`}>
                               {guardianWeeklyProofClaimed ? "Claimed" : guardianWeeklyProofReady ? "Ready" : `${Math.min(3, completedProofCount)}/3 actions`}
                             </span>
                           </div>
-                          <p className="mt-3 text-sm leading-6 text-[#687668]">
+                          <p className="mt-3 text-sm leading-6 text-[#746A80]">
                             Claim a high-level action summary for {chogGuardian?.label}. Sleep, heart rate, stress values, and journal text remain private.
                           </p>
                           <div className="mt-4 flex flex-wrap gap-2">
@@ -4664,7 +4783,7 @@ export default function Web3HealthPage() {
                               type="button"
                               onClick={claimWeeklyGuardianProof}
                               disabled={!guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
-                              className="rounded-full bg-[#101510] text-white hover:bg-[#253525] disabled:bg-[#dfe7dc] disabled:text-[#657365]"
+                              className="rounded-full bg-[#171022] text-white hover:bg-[#302345] disabled:bg-[#E5DFF2] disabled:text-[#756A82]"
                             >
                               {guardianClaimState === "preparing" || guardianClaimState === "wallet" ? (
                                 <RefreshCw className="mr-2 size-4 animate-spin" />
@@ -4683,12 +4802,12 @@ export default function Web3HealthPage() {
                                       ? "Claim on Monad"
                                       : "Claim weekly proof"}
                             </Button>
-                            <Button className="rounded-full border border-[#dce6d9] bg-white text-[#172117] hover:bg-[#eef5ec]">
+                            <Button className="rounded-full border border-[#E1DAEF] bg-white text-[#21182C] hover:bg-[#F3EEFF]">
                               Prepare poster
                             </Button>
                           </div>
                           {guardianProofTxHash ? (
-                            <p className="mt-3 break-all text-[0.68rem] text-[#657365]">Proof reference: {guardianProofTxHash}</p>
+                            <p className="mt-3 break-all text-[0.68rem] text-[#756A82]">Proof reference: {guardianProofTxHash}</p>
                           ) : null}
                           {chogActivationError ? (
                             <p className="mt-3 text-xs leading-5 text-rose-600">{chogActivationError}</p>
@@ -4705,22 +4824,22 @@ export default function Web3HealthPage() {
                             key={proof.label}
                             whileHover={{ y: -5, scale: 1.015 }}
                             className={`rounded-[1.5rem] border p-4 sm:p-5 ${
-                              proof.completed ? "border-[#cfe0cb] bg-[#effbe9]" : "border-[#e1e9df] bg-[#fbfdf9]"
+                              proof.completed ? "border-[#D9D0F1] bg-[#F8F0FF]" : "border-[#E8E2F2] bg-[#FCFAFF]"
                             }`}
                           >
                             <div className="mb-5 flex items-start justify-between sm:mb-6">
-                              <div className="flex size-11 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#3a8f4d]">
+                              <div className="flex size-11 items-center justify-center rounded-2xl bg-[#F3EEFF] text-[#836EF9]">
                                 {proof.completed ? <Check size={18} strokeWidth={3} /> : <Icon size={18} />}
                               </div>
-                              <span className="rounded-full border border-[#dce6d9] bg-white px-3 py-1 text-xs text-[#657365]">
+                              <span className="rounded-full border border-[#E1DAEF] bg-white px-3 py-1 text-xs text-[#756A82]">
                                 {proof.status}
                               </span>
                             </div>
-                            <h3 className="text-xl font-medium text-[#172117]">{proof.label}</h3>
+                            <h3 className="text-xl font-medium text-[#21182C]">{proof.label}</h3>
                             <Button
                               onClick={() => syncProofAction(proof)}
                               disabled={proof.completed && proof.syncable}
-                              className="mt-5 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525] disabled:bg-[#dfe7dc] disabled:text-[#657365]"
+                              className="mt-5 w-full rounded-full bg-[#171022] text-white hover:bg-[#302345] disabled:bg-[#E5DFF2] disabled:text-[#756A82]"
                             >
                               {proof.actionLabel}
                             </Button>
@@ -4734,8 +4853,8 @@ export default function Web3HealthPage() {
 
               {activeTab === "Rewards" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="grid gap-5 rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7 xl:grid-cols-[0.82fr_1.18fr]">
-                    <div className="rounded-[1.75rem] bg-[#101510] p-6 text-white shadow-[0_28px_90px_rgba(16,21,16,0.18)]">
+                  <section className="grid gap-5 rounded-[1.6rem] border border-[#E5DFF2] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7 xl:grid-cols-[0.82fr_1.18fr]">
+                    <div className="rounded-[1.75rem] bg-[#171022] p-6 text-white shadow-[0_28px_90px_rgba(16,21,16,0.18)]">
                       <p className="text-sm font-semibold uppercase tracking-[0.24em] text-trace-green/72">
                         On-chain health tasks
                       </p>
@@ -4743,7 +4862,7 @@ export default function Web3HealthPage() {
                         {rewardStats.map(([label, value]) => (
                           <div
                             key={label}
-                            className="relative overflow-hidden rounded-[1.3rem] border border-trace-green/20 bg-[radial-gradient(circle_at_20%_10%,rgba(157,255,122,0.18),transparent_36%),rgba(255,255,255,0.055)] p-4 ring-1 ring-white/5"
+                            className="relative overflow-hidden rounded-[1.3rem] border border-trace-green/20 bg-[radial-gradient(circle_at_20%_10%,rgba(255,123,172,0.18),transparent_36%),rgba(255,255,255,0.055)] p-4 ring-1 ring-white/5"
                           >
                             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white/42">{label}</p>
                             <div className="mt-2 flex items-center gap-2">
@@ -4812,17 +4931,17 @@ export default function Web3HealthPage() {
                               key={mission.label}
                               onClick={() => setActiveTab(mission.targetTab as HealthTab)}
                               whileHover={{ y: -4 }}
-                              className={`rounded-[1.45rem] border p-5 text-left transition focus:outline-none focus:ring-2 focus:ring-[#9DFF7A]/60 ${isDone ? "border-[#101510] bg-[#101510] text-white" : "border-[#e1e9df] bg-[#fbfdf9] hover:border-[#cfe0cb]"}`}
+                              className={`rounded-[1.45rem] border p-5 text-left transition focus:outline-none focus:ring-2 focus:ring-[#FF7BAC]/60 ${isDone ? "border-[#171022] bg-[#171022] text-white" : "border-[#E8E2F2] bg-[#FCFAFF] hover:border-[#D9D0F1]"}`}
                             >
                               <div className="mb-5 flex items-start justify-between gap-3">
-                                <div className="flex size-11 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#3a8f4d]">
+                                <div className="flex size-11 items-center justify-center rounded-2xl bg-[#F3EEFF] text-[#836EF9]">
                                   {isDone ? <Check size={18} strokeWidth={3} /> : <Icon size={18} />}
                                 </div>
-                                <span className={`rounded-full border px-3 py-1 text-xs ${isDone ? "border-trace-green/30 bg-trace-green/15 text-trace-green" : "border-[#dce6d9] bg-white text-[#657365]"}`}>
+                                <span className={`rounded-full border px-3 py-1 text-xs ${isDone ? "border-trace-green/30 bg-trace-green/15 text-trace-green" : "border-[#E1DAEF] bg-white text-[#756A82]"}`}>
                                   {isDone ? "Completed" : mission.status}
                                 </span>
                               </div>
-                              <h3 className={`text-lg font-medium leading-tight ${isDone ? "text-white" : "text-[#172117]"}`}>
+                              <h3 className={`text-lg font-medium leading-tight ${isDone ? "text-white" : "text-[#21182C]"}`}>
                                 {mission.label === "Complete 20-20-20 eye break" ? (
                                   <>
                                     <span className="block">Complete 20-20-20</span>
@@ -4837,7 +4956,7 @@ export default function Web3HealthPage() {
                                   mission.label
                                 )}
                               </h3>
-                              <p className="mt-3 text-sm font-semibold text-[#2f7d3c]">{isDone ? "Reward earned" : mission.reward}</p>
+                              <p className="mt-3 text-sm font-semibold text-[#7555DA]">{isDone ? "Reward earned" : mission.reward}</p>
                             </motion.button>
                           );
                         })}
@@ -4845,17 +4964,17 @@ export default function Web3HealthPage() {
 
                       <div className="grid gap-3 md:grid-cols-3">
                         {dashboardBadges.map((badge) => (
-                          <div key={badge.label} className="rounded-[1.35rem] border border-[#e1e9df] bg-[#f8fbf6] p-5">
-                            <ShieldCheck className="size-5 text-[#2f7d3c]" />
-                            <p className="mt-4 whitespace-nowrap text-base font-medium text-[#172117]">{badge.label}</p>
-                            <p className="mt-2 text-sm leading-5 text-[#687668]">{badge.detail}</p>
+                          <div key={badge.label} className="rounded-[1.35rem] border border-[#E8E2F2] bg-[#FAF7FF] p-5">
+                            <ShieldCheck className="size-5 text-[#7555DA]" />
+                            <p className="mt-4 whitespace-nowrap text-base font-medium text-[#21182C]">{badge.label}</p>
+                            <p className="mt-2 text-sm leading-5 text-[#746A80]">{badge.detail}</p>
                             <div className="mt-4 flex items-center gap-2">
-                              <p className="whitespace-nowrap text-sm font-medium text-[#2f7d3c]">{badge.status}</p>
+                              <p className="whitespace-nowrap text-sm font-medium text-[#7555DA]">{badge.status}</p>
                               {badge.label === "Builder Balance" ? (
                                 <button
                                   type="button"
                                   onClick={() => setBadgeHintOpen((current) => (current === "builder" ? "" : "builder"))}
-                                  className="flex size-5 items-center justify-center rounded-full border border-[#bad9b4] bg-white text-[0.65rem] font-bold text-[#2f7d3c]"
+                                  className="flex size-5 items-center justify-center rounded-full border border-[#D2C6EA] bg-white text-[0.65rem] font-bold text-[#7555DA]"
                                   aria-label="Builder Balance badge requirement"
                                 >
                                   !
@@ -4863,7 +4982,7 @@ export default function Web3HealthPage() {
                               ) : null}
                             </div>
                             {badge.label === "Builder Balance" && badgeHintOpen === "builder" ? (
-                              <p className="mt-3 rounded-xl border border-[#dce6d9] bg-white px-3 py-2 text-xs leading-5 text-[#2f7d3c]">
+                              <p className="mt-3 rounded-xl border border-[#E1DAEF] bg-white px-3 py-2 text-xs leading-5 text-[#7555DA]">
                                 Reach level 6 to mint badge.
                               </p>
                             ) : null}
@@ -4877,15 +4996,15 @@ export default function Web3HealthPage() {
 
               {activeTab === "AI Chat" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="grid gap-5 rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7 xl:grid-cols-[0.82fr_1.18fr]">
+                  <section className="grid gap-5 rounded-[1.6rem] border border-[#E5DFF2] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-7 xl:grid-cols-[0.82fr_1.18fr]">
                     <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#607260]">
+                      <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6F617F]">
                         AI Health Guardian Chat
                       </p>
                       <h2 className="mt-2 text-[clamp(2.3rem,4vw,4.8rem)] font-medium leading-[0.94]">
                         Ask what your body and behavior are saying.
                       </h2>
-                      <p className="mt-5 text-base leading-7 text-[#667466]">
+                      <p className="mt-5 text-base leading-7 text-[#756A82]">
                         The chat explains onchain stress, recovery, and healthy action proofs in plain
                         English. It is a companion layer, not a medical diagnosis.
                       </p>
@@ -4894,7 +5013,7 @@ export default function Web3HealthPage() {
                           <button
                             key={prompt}
                             type="button"
-                            className="rounded-full border border-[#d9e1d7] bg-white px-4 py-2 text-sm text-[#526152] transition hover:border-[#9DFF7A] hover:text-[#172117]"
+                            className="rounded-full border border-[#E1DAEC] bg-white px-4 py-2 text-sm text-[#5F526F] transition hover:border-[#FF7BAC] hover:text-[#21182C]"
                           >
                             {prompt}
                           </button>
@@ -4902,25 +5021,25 @@ export default function Web3HealthPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-[1.75rem] border border-[#dce6d9] bg-[#f8fbf6] p-5">
+                    <div className="rounded-[1.75rem] border border-[#E1DAEF] bg-[#FAF7FF] p-5">
                       <div className="space-y-4">
                         {chatMessages.map((message, index) => (
                           <div
                             key={`${message.role}-desktop-${index}`}
                             className={`max-w-[84%] rounded-[1.35rem] p-5 text-sm leading-6 ${
                               message.role === "assistant"
-                                ? "bg-[#101510] text-white shadow-[0_18px_55px_rgba(16,21,16,0.16)]"
-                                : "ml-auto border border-[#dfe7dc] bg-white text-[#172117]"
+                                ? "bg-[#171022] text-white shadow-[0_18px_55px_rgba(16,21,16,0.16)]"
+                                : "ml-auto border border-[#E5DFF2] bg-white text-[#21182C]"
                             }`}
                           >
                             {message.text}
                           </div>
                         ))}
                       </div>
-                      <div className="mt-6 flex items-center gap-3 rounded-full border border-[#d9e1d7] bg-white px-5 py-4 text-sm text-[#7b877b]">
+                      <div className="mt-6 flex items-center gap-3 rounded-full border border-[#E1DAEC] bg-white px-5 py-4 text-sm text-[#85788F]">
                         <MessageCircle size={17} />
                         Ask about your stress, recovery, proof streak, or market behavior...
-                        <Button className="ml-auto rounded-full bg-[#101510] text-white hover:bg-[#253525]">
+                        <Button className="ml-auto rounded-full bg-[#171022] text-white hover:bg-[#302345]">
                           Send
                         </Button>
                       </div>
@@ -4931,45 +5050,45 @@ export default function Web3HealthPage() {
 
               {activeTab === "Settings" ? (
                 <Reveal className="hidden lg:block">
-                  <section className="flex flex-col rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-5 lg:h-[calc(100vh-3rem)] lg:overflow-hidden">
+                  <section className="flex flex-col rounded-[1.6rem] border border-[#E5DFF2] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-5 lg:h-[calc(100vh-3rem)] lg:overflow-hidden">
                     <div className="grid flex-1 content-start gap-4 xl:grid-cols-[0.85fr_1.15fr]">
                       <motion.article
                         whileHover={{ y: -4 }}
-                        className="rounded-[1.65rem] border border-[#e1e9df] bg-[#fbfdf9] p-5 shadow-[0_16px_50px_rgba(16,21,16,0.04)]"
+                        className="rounded-[1.65rem] border border-[#E8E2F2] bg-[#FCFAFF] p-5 shadow-[0_16px_50px_rgba(16,21,16,0.04)]"
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#607260]">
+                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6F617F]">
                               Wallet
                             </p>
-                            <h3 className="mt-3 text-3xl font-medium text-[#172117]">
+                            <h3 className="mt-3 text-3xl font-medium text-[#21182C]">
                               {walletAddress ? "Wallet connected" : "Connect wallet"}
                             </h3>
-                            <p className="mt-3 text-sm leading-6 text-[#687668]">
+                            <p className="mt-3 text-sm leading-6 text-[#746A80]">
                               {walletAddress
                                 ? `Wallet ${formatWalletAddress(walletAddress)}`
                                 : "Connect for consent records, healthy action proofs, and badge ownership."}
                             </p>
                           </div>
-                          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#3a8f4d]">
+                          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[#F3EEFF] text-[#836EF9]">
                             <Wallet size={20} />
                           </div>
                         </div>
                         <div className="mt-6 grid gap-2">
                           {walletAddress ? (
-                            <div className="rounded-[1.25rem] border border-[#dfe7dc] bg-white p-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a867a]">Profile name</p>
+                            <div className="rounded-[1.25rem] border border-[#E5DFF2] bg-white p-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#85788F]">Profile name</p>
                               <div className="mt-2 flex gap-2">
                                 <input
                                   value={pendingDisplayName}
                                   onChange={(event) => setPendingDisplayName(event.target.value)}
-                                  className="min-w-0 flex-1 rounded-full border border-[#dfe7dc] bg-[#f8fbf6] px-4 py-2 text-sm font-medium text-[#172117] outline-none focus:border-[#9DFF7A]"
+                                  className="min-w-0 flex-1 rounded-full border border-[#E5DFF2] bg-[#FAF7FF] px-4 py-2 text-sm font-medium text-[#21182C] outline-none focus:border-[#FF7BAC]"
                                   placeholder="Name or nickname"
                                 />
                                 <Button
                                   onClick={saveProfileName}
                                   disabled={!pendingDisplayName.trim()}
-                                  className="rounded-full bg-[#101510] px-4 text-white hover:bg-[#253525]"
+                                  className="rounded-full bg-[#171022] px-4 text-white hover:bg-[#302345]"
                                 >
                                   Save
                                 </Button>
@@ -4977,18 +5096,18 @@ export default function Web3HealthPage() {
                             </div>
                           ) : null}
                           {chogGuardian ? (
-                            <div className="flex items-center gap-3 border-y border-[#e1e9df] py-3">
-                              <GuardianArtwork className="size-14 shrink-0" />
+                            <div className="flex items-center gap-3 border-y border-[#E8E2F2] py-3">
+                              <GuardianArtwork className="size-14 shrink-0" src={chogGuardian.image} alt={chogGuardian.label} />
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-[#607260]">Active Chog guardian</p>
-                                <p className="mt-1 truncate text-sm font-medium text-[#172117]">{chogGuardian.label} · Level {guardianLevel}</p>
-                                <p className="mt-1 text-xs text-[#7a867a]">{chogGuardian.mode === "wallet" ? "Ownership verified" : "Hackathon preview mode"}</p>
+                                <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-[#6F617F]">Active Chog guardian</p>
+                                <p className="mt-1 truncate text-sm font-medium text-[#21182C]">{chogGuardian.label} · Level {guardianLevel}</p>
+                                <p className="mt-1 text-xs text-[#85788F]">{chogGuardian.mode === "wallet" ? "Ownership verified" : "Hackathon preview mode"}</p>
                               </div>
                               <button
                                 type="button"
                                 onClick={() => void discoverChogGuardian()}
                                 disabled={isDiscoveringChog}
-                                className="rounded-full border border-[#dfe7dc] px-3 py-2 text-xs font-medium text-[#526152] transition hover:border-[#101510] hover:text-[#101510]"
+                                className="rounded-full border border-[#E5DFF2] px-3 py-2 text-xs font-medium text-[#5F526F] transition hover:border-[#171022] hover:text-[#171022]"
                               >
                                 {isDiscoveringChog ? "Scanning..." : "Change"}
                               </button>
@@ -5010,7 +5129,7 @@ export default function Web3HealthPage() {
                           <Button
                             onClick={connectWallet}
                             disabled={isWalletConnecting || Boolean(walletAddress)}
-                            className="h-11 w-full rounded-full bg-[#101510] text-white hover:bg-[#253525] disabled:opacity-100"
+                            className="h-11 w-full rounded-full bg-[#171022] text-white hover:bg-[#302345] disabled:opacity-100"
                           >
                             {walletAddress ? "Wallet connected" : isWalletConnecting ? "Connecting..." : "Connect wallet"}
                           </Button>
@@ -5030,17 +5149,17 @@ export default function Web3HealthPage() {
                         {walletError ? <p className="mt-3 text-xs leading-5 text-rose-500">{walletError}</p> : null}
                       </motion.article>
 
-                      <div className="rounded-[1.65rem] border border-[#e1e9df] bg-[#fbfdf9] p-5 shadow-[0_16px_50px_rgba(16,21,16,0.04)]">
+                      <div className="rounded-[1.65rem] border border-[#E8E2F2] bg-[#FCFAFF] p-5 shadow-[0_16px_50px_rgba(16,21,16,0.04)]">
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#607260]">
+                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6F617F]">
                               Health Apps
                             </p>
-                            <p className="mt-3 text-sm leading-6 text-[#687668]">
+                            <p className="mt-3 text-sm leading-6 text-[#746A80]">
                               Choose a source, then select exactly which health signals Health Trace can read.
                             </p>
                           </div>
-                          <HeartPulse className="size-6 text-[#2f7d3c]" />
+                          <HeartPulse className="size-6 text-[#7555DA]" />
                         </div>
 
                         <div className="mt-5 grid grid-cols-4 gap-3">
@@ -5056,20 +5175,20 @@ export default function Web3HealthPage() {
                                 onClick={() => setSelectedHealthApp(app.label)}
                                 className={`relative rounded-[1.35rem] border p-4 text-center transition ${
                                   isSelected
-                                    ? "border-[#101510] bg-[#101510] text-white shadow-[0_16px_44px_rgba(16,21,16,0.18)]"
-                                    : "border-[#e1e9df] bg-white text-[#657265] hover:border-[#cfe0cb]"
+                                    ? "border-[#171022] bg-[#171022] text-white shadow-[0_16px_44px_rgba(16,21,16,0.18)]"
+                                    : "border-[#E8E2F2] bg-white text-[#756A82] hover:border-[#D9D0F1]"
                                 }`}
                               >
                                 {isConnected ? (
-                                  <span className="absolute right-3 top-3 flex size-5 items-center justify-center rounded-full bg-trace-green text-[#101510]">
+                                  <span className="absolute right-3 top-3 flex size-5 items-center justify-center rounded-full bg-trace-green text-[#171022]">
                                     <Check size={12} strokeWidth={3} />
                                   </span>
                                 ) : null}
-                                <span className={`mx-auto flex size-12 items-center justify-center rounded-2xl ${isSelected ? "bg-trace-green/15 text-trace-green" : "bg-[#eef5ec] text-[#3a8f4d]"}`}>
+                                <span className={`mx-auto flex size-12 items-center justify-center rounded-2xl ${isSelected ? "bg-trace-green/15 text-trace-green" : "bg-[#F3EEFF] text-[#836EF9]"}`}>
                                   <Icon size={20} />
                                 </span>
                                 <span className="mt-3 block text-sm font-medium leading-tight">{app.label}</span>
-                                <span className={`mt-2 block text-xs ${isSelected ? "text-white/46" : "text-[#7a867a]"}`}>
+                                <span className={`mt-2 block text-xs ${isSelected ? "text-white/46" : "text-[#85788F]"}`}>
                                   {isConnected ? `${connectedCount} signals` : "Not connected"}
                                 </span>
                               </button>
@@ -5078,19 +5197,19 @@ export default function Web3HealthPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-[1.65rem] border border-[#e1e9df] bg-[#fbfdf9] p-5 shadow-[0_16px_50px_rgba(16,21,16,0.04)] xl:col-span-2">
+                      <div className="rounded-[1.65rem] border border-[#E8E2F2] bg-[#FCFAFF] p-5 shadow-[0_16px_50px_rgba(16,21,16,0.04)] xl:col-span-2">
                         <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                           <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#607260]">
+                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6F617F]">
                               {selectedHealthApp} permissions
                             </p>
-                            <h3 className="mt-2 text-2xl font-medium text-[#172117]">
+                            <h3 className="mt-2 text-2xl font-medium text-[#21182C]">
                               {connectedHealthApps.includes(selectedHealthApp)
                                 ? "Select the data you want to connect."
                                 : "Connect this app to choose data."}
                             </h3>
                           </div>
-                          <p className="text-sm text-[#687668]">
+                          <p className="text-sm text-[#746A80]">
                             {connectedHealthApps.includes(selectedHealthApp)
                               ? `${healthPermissions[selectedHealthApp]?.length ?? 0} selected`
                               : "Not connected"}
@@ -5108,12 +5227,12 @@ export default function Web3HealthPage() {
                                     onClick={() => toggleHealthPermission(selectedHealthApp, permission)}
                                     className={`flex items-center justify-between rounded-[1.2rem] border px-4 py-3 text-left text-sm font-medium transition ${
                                       isEnabled
-                                        ? "border-[#101510] bg-[#101510] text-white"
-                                        : "border-[#dfe7dc] bg-white text-[#657265] hover:border-[#cfe0cb]"
+                                        ? "border-[#171022] bg-[#171022] text-white"
+                                        : "border-[#E5DFF2] bg-white text-[#756A82] hover:border-[#D9D0F1]"
                                     }`}
                                   >
                                     {permission}
-                                    <span className={`size-3 rounded-full ${isEnabled ? "bg-trace-green" : "bg-[#dfe7dc]"}`} />
+                                    <span className={`size-3 rounded-full ${isEnabled ? "bg-trace-green" : "bg-[#E5DFF2]"}`} />
                                   </button>
                                 );
                               })}
@@ -5126,13 +5245,13 @@ export default function Web3HealthPage() {
                             </Button>
                           </>
                         ) : (
-                          <div className="mt-5 rounded-[1.35rem] border border-[#dfe7dc] bg-white p-5">
-                            <p className="text-sm leading-6 text-[#687668]">
+                          <div className="mt-5 rounded-[1.35rem] border border-[#E5DFF2] bg-white p-5">
+                            <p className="text-sm leading-6 text-[#746A80]">
                               {selectedHealthApp} is not connected yet. Connect to it to simulate the consent flow.
                             </p>
                             <Button
                               onClick={() => connectHealthApp(selectedHealthApp)}
-                              className="mt-4 rounded-full bg-[#101510] text-white hover:bg-[#253525]"
+                              className="mt-4 rounded-full bg-[#171022] text-white hover:bg-[#302345]"
                             >
                               Connect to {selectedHealthApp}
                             </Button>
@@ -5147,15 +5266,15 @@ export default function Web3HealthPage() {
                         ["Data boundary", "Choose what stays local, permissioned, or provable."],
                         ["Trusted circle", "Optional private alerts for late-night recovery risk."],
                       ].map(([title, detail]) => (
-                        <div key={title} className="rounded-[1.35rem] border border-[#dfe7dc] bg-[#f8fbf6] p-4">
-                          <p className="text-base font-medium text-[#172117]">{title}</p>
-                          <p className="mt-2 text-xs leading-5 text-[#687668]">{detail}</p>
+                        <div key={title} className="rounded-[1.35rem] border border-[#E5DFF2] bg-[#FAF7FF] p-4">
+                          <p className="text-base font-medium text-[#21182C]">{title}</p>
+                          <p className="mt-2 text-xs leading-5 text-[#746A80]">{detail}</p>
                         </div>
                       ))}
                     </div>
 
                     {isAdminWallet ? (
-                      <div className="mt-3 rounded-[1.35rem] border border-[#101510] bg-[#101510] p-4 text-white shadow-[0_18px_60px_rgba(16,21,16,0.18)]">
+                      <div className="mt-3 rounded-[1.35rem] border border-[#171022] bg-[#171022] p-4 text-white shadow-[0_18px_60px_rgba(16,21,16,0.18)]">
                         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-trace-green">
@@ -5228,25 +5347,25 @@ export default function Web3HealthPage() {
       <AnimatePresence>
         {syncingProofAction ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#101510]/35 px-4 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#171022]/35 px-4 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
           >
             <motion.div
-              className="w-full max-w-sm rounded-[1.75rem] border border-[#dfe7dc] bg-white p-5 text-center shadow-[0_34px_110px_rgba(16,21,16,0.2)]"
+              className="w-full max-w-sm rounded-[1.75rem] border border-[#E5DFF2] bg-white p-5 text-center shadow-[0_34px_110px_rgba(16,21,16,0.2)]"
               initial={{ opacity: 0, y: 18, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             >
-              <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#101510] text-trace-green">
+              <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#171022] text-trace-green">
                 <Activity size={22} />
               </div>
-              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.22em] text-[#607260]">Sync in progress</p>
-              <h2 className="mt-2 text-2xl font-medium leading-tight text-[#101510]">{syncingProofAction}</h2>
-              <p className="mt-3 text-sm leading-6 text-[#687668]">
+              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.22em] text-[#6F617F]">Sync in progress</p>
+              <h2 className="mt-2 text-2xl font-medium leading-tight text-[#171022]">{syncingProofAction}</h2>
+              <p className="mt-3 text-sm leading-6 text-[#746A80]">
                 Health Trace is syncing this healthy action to your connected health apps for proof creation.
               </p>
             </motion.div>
@@ -5257,7 +5376,7 @@ export default function Web3HealthPage() {
       <AnimatePresence>
         {pendingDisconnectApp ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#101510]/45 px-4 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#171022]/45 px-4 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -5267,7 +5386,7 @@ export default function Web3HealthPage() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="disconnect-health-app-title"
-              className="w-full max-w-md rounded-[1.75rem] border border-[#dfe7dc] bg-white p-5 shadow-[0_34px_110px_rgba(16,21,16,0.22)]"
+              className="w-full max-w-md rounded-[1.75rem] border border-[#E5DFF2] bg-white p-5 shadow-[0_34px_110px_rgba(16,21,16,0.22)]"
               initial={{ opacity: 0, y: 18, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
@@ -5276,16 +5395,16 @@ export default function Web3HealthPage() {
               <div className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
                 <CircleAlert size={22} />
               </div>
-              <h2 id="disconnect-health-app-title" className="mt-5 text-2xl font-medium leading-tight text-[#101510]">
+              <h2 id="disconnect-health-app-title" className="mt-5 text-2xl font-medium leading-tight text-[#171022]">
                 Disconnect {pendingDisconnectApp}?
               </h2>
-              <p className="mt-3 text-sm leading-6 text-[#687668]">
+              <p className="mt-3 text-sm leading-6 text-[#746A80]">
                 Health Trace will stop reading this app&apos;s health signals and remove its selected data permissions.
               </p>
               <div className="mt-6 grid grid-cols-2 gap-3">
                 <Button
                   onClick={() => setPendingDisconnectApp("")}
-                  className="h-11 rounded-full bg-[#eef5ec] text-[#526152] hover:bg-[#e4eee1]"
+                  className="h-11 rounded-full bg-[#F3EEFF] text-[#5F526F] hover:bg-[#E9E2F3]"
                 >
                   No, keep connected
                 </Button>
@@ -5304,7 +5423,7 @@ export default function Web3HealthPage() {
       <AnimatePresence>
         {pendingJournalCheckIn ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#101510]/45 px-4 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#171022]/45 px-4 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -5314,29 +5433,29 @@ export default function Web3HealthPage() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="journal-check-in-title"
-              className="w-full max-w-lg rounded-[1.75rem] border border-[#dfe7dc] bg-white p-5 shadow-[0_34px_110px_rgba(16,21,16,0.22)]"
+              className="w-full max-w-lg rounded-[1.75rem] border border-[#E5DFF2] bg-white p-5 shadow-[0_34px_110px_rgba(16,21,16,0.22)]"
               initial={{ opacity: 0, y: 18, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             >
               <div className="flex items-start justify-between gap-4">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#2f7d3c]">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-[#F3EEFF] text-[#7555DA]">
                   <MessageCircle size={22} />
                 </div>
                 <button
                   type="button"
                   onClick={() => setPendingJournalCheckIn("")}
-                  className="rounded-full border border-[#dfe7dc] px-3 py-1 text-xs font-medium text-[#687668] transition hover:border-[#cbd9c7] hover:text-[#101510]"
+                  className="rounded-full border border-[#E5DFF2] px-3 py-1 text-xs font-medium text-[#746A80] transition hover:border-[#D8CFEB] hover:text-[#171022]"
                 >
                   Cancel
                 </button>
               </div>
-              <p className="mt-5 text-sm font-semibold uppercase tracking-[0.2em] text-[#607260]">Journal check-in</p>
-              <h2 id="journal-check-in-title" className="mt-2 text-3xl font-medium leading-tight text-[#101510]">
+              <p className="mt-5 text-sm font-semibold uppercase tracking-[0.2em] text-[#6F617F]">Journal check-in</p>
+              <h2 id="journal-check-in-title" className="mt-2 text-3xl font-medium leading-tight text-[#171022]">
                 {pendingJournalCheckIn}
               </h2>
-              <p className="mt-3 text-sm leading-6 text-[#687668]">
+              <p className="mt-3 text-sm leading-6 text-[#746A80]">
                 Choose how strong this signal feels right now. Health Trace will translate it into a private decision-state note.
               </p>
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -5347,17 +5466,17 @@ export default function Web3HealthPage() {
                       key={level}
                       type="button"
                       onClick={() => selectJournalLevel(level)}
-                      className="rounded-[1.25rem] border border-[#dfe7dc] bg-[#fbfdf9] p-4 text-left transition hover:border-[#101510] hover:bg-white"
+                      className="rounded-[1.25rem] border border-[#E5DFF2] bg-[#FCFAFF] p-4 text-left transition hover:border-[#171022] hover:bg-white"
                     >
-                      <span className="text-xl font-medium text-[#101510]">{level}</span>
-                      <span className="mt-3 block text-xs font-medium text-[#2f7d3c]">{response?.action}</span>
+                      <span className="text-xl font-medium text-[#171022]">{level}</span>
+                      <span className="mt-3 block text-xs font-medium text-[#7555DA]">{response?.action}</span>
                     </button>
                   );
                 })}
               </div>
-              <div className="mt-5 rounded-[1.25rem] border border-[#dfe7dc] bg-[#f8fbf6] p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#607260]">What happens next</p>
-                <p className="mt-2 text-sm leading-6 text-[#687668]">
+              <div className="mt-5 rounded-[1.25rem] border border-[#E5DFF2] bg-[#FAF7FF] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6F617F]">What happens next</p>
+                <p className="mt-2 text-sm leading-6 text-[#746A80]">
                   The selected level marks today&apos;s check-in complete, updates Rewards, and changes the Journal card&apos;s response.
                 </p>
               </div>

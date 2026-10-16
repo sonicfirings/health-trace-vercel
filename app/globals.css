@@ -19,7 +19,7 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 28% -12%, rgba(157, 255, 122, 0.1), transparent 30rem),
+    radial-gradient(circle at 28% -12%, rgba(255, 123, 172, 0.1), transparent 30rem),
     radial-gradient(circle at 78% -8%, rgba(131, 110, 249, 0.16), transparent 36rem),
     linear-gradient(180deg, #0d0914 0%, #130d1f 48%, #0d0914 100%);
   color: #f7f7f2;
@@ -52,7 +52,7 @@ body {
 }
 
 .hairline {
-  background: linear-gradient(90deg, transparent, rgba(131, 110, 249, 0.72), rgba(157, 255, 122, 0.56), transparent);
+  background: linear-gradient(90deg, transparent, rgba(131, 110, 249, 0.72), rgba(255, 123, 172, 0.56), transparent);
 }
 
 .no-scrollbar {
@@ -87,20 +87,20 @@ body {
 }
 
 .trace-flow .react-flow__controls-button:hover {
-  background: rgba(157, 255, 122, 0.14);
+  background: rgba(255, 123, 172, 0.14);
 }
 
 .rainbow-context-ring {
   background: conic-gradient(
     from 0deg,
-    rgba(157, 255, 122, 0.28),
+    rgba(255, 123, 172, 0.28),
     rgba(118, 214, 255, 0.95),
     rgba(197, 151, 255, 0.9),
     rgba(255, 190, 128, 0.78),
-    rgba(157, 255, 122, 1),
-    rgba(157, 255, 122, 0.28)
+    rgba(255, 123, 172, 1),
+    rgba(255, 123, 172, 0.28)
   );
   filter:
-    drop-shadow(0 0 18px rgba(157, 255, 122, 0.34))
+    drop-shadow(0 0 18px rgba(255, 123, 172, 0.34))
     drop-shadow(0 0 42px rgba(118, 214, 255, 0.16));
 }

@@ -5,7 +5,7 @@ export default function TraceHealthWeb3MobilePreview() {
     <main className="min-h-screen bg-[#080a08] px-4 py-6 text-white">
       <div className="mx-auto flex max-w-6xl flex-col items-center gap-5">
         <div className="text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9DFF7A]/72">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#FF7BAC]/72">
             Mobile Preview
           </p>
           <h1 className="mt-2 text-3xl font-medium tracking-normal">Health Trace Web3</h1>

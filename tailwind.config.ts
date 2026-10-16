@@ -13,7 +13,7 @@ const config: Config = {
         background: "#090909",
         foreground: "#f7f7f2",
         trace: {
-          green: "#9DFF7A",
+          green: "#FF7BAC",
           purple: "#836EF9",
           deep: "#21143A",
           mist: "#F0ECFF",
