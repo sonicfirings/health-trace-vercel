@@ -3,9 +3,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Trace - Behavioral Graph for AI",
+  title: "Health Trace - Chog Guardian",
   description:
-    "Trace is building user-owned behavioral memory for AI agents.",
+    "A private Chog Guardian where verified healthy actions evolve your Chog NFT on Monad.",
 };
 
 export default function RootLayout({

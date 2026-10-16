@@ -13,6 +13,7 @@ type WalletRegistryPayload = {
   reward_points?: number;
   adminWallet?: string;
   targetWallet?: string;
+  guardianData?: Record<string, unknown>;
 };
 
 const getSupabaseConfig = () => {
@@ -52,9 +53,15 @@ export async function GET(request: NextRequest) {
   const wallet = normalizeWallet(request.nextUrl.searchParams.get("wallet") ?? "");
 
   if (wallet) {
-    const response = await supabaseRequest(
-      `wallet_profiles?wallet_address=eq.${encodeURIComponent(wallet)}&select=wallet_address,display_name,connected_app_count,reward_points,created_at,last_seen_at,reset_at&limit=1`,
+    let response = await supabaseRequest(
+      `wallet_profiles?wallet_address=eq.${encodeURIComponent(wallet)}&select=wallet_address,display_name,connected_app_count,reward_points,guardian_data,created_at,last_seen_at,reset_at&limit=1`,
     );
+
+    if (response && !response.ok) {
+      response = await supabaseRequest(
+        `wallet_profiles?wallet_address=eq.${encodeURIComponent(wallet)}&select=wallet_address,display_name,connected_app_count,reward_points,created_at,last_seen_at,reset_at&limit=1`,
+      );
+    }
 
     if (!response) {
       return NextResponse.json({ wallet: null });
@@ -69,6 +76,7 @@ export async function GET(request: NextRequest) {
       display_name: string | null;
       connected_app_count: number | null;
       reward_points: number | null;
+      guardian_data?: Record<string, unknown> | null;
       created_at: string;
       last_seen_at: string;
       reset_at: string | null;
@@ -84,6 +92,7 @@ export async function GET(request: NextRequest) {
             displayName: row.display_name ?? "",
             connectedApps: row.connected_app_count ?? 0,
             rewardPoints: row.reward_points ?? 0,
+            guardianData: row.guardian_data ?? undefined,
             resetAt: row.reset_at ?? undefined,
           }
         : null,
@@ -94,9 +103,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Admin wallet required." }, { status: 403 });
   }
 
-  const response = await supabaseRequest(
-    "wallet_profiles?select=wallet_address,display_name,connected_app_count,reward_points,created_at,last_seen_at,reset_at&order=last_seen_at.desc",
+  let response = await supabaseRequest(
+    "wallet_profiles?select=wallet_address,display_name,connected_app_count,reward_points,guardian_data,created_at,last_seen_at,reset_at&order=last_seen_at.desc",
   );
+
+  if (response && !response.ok) {
+    response = await supabaseRequest(
+      "wallet_profiles?select=wallet_address,display_name,connected_app_count,reward_points,created_at,last_seen_at,reset_at&order=last_seen_at.desc",
+    );
+  }
 
   if (!response) {
     return NextResponse.json({ wallets: [] });
@@ -111,6 +126,7 @@ export async function GET(request: NextRequest) {
     display_name: string | null;
     connected_app_count: number | null;
     reward_points: number | null;
+    guardian_data?: Record<string, unknown> | null;
     created_at: string;
     last_seen_at: string;
     reset_at: string | null;
@@ -124,6 +140,7 @@ export async function GET(request: NextRequest) {
       displayName: row.display_name ?? "",
       connectedApps: row.connected_app_count ?? 0,
       rewardPoints: row.reward_points ?? 0,
+      guardianData: row.guardian_data ?? undefined,
       resetAt: row.reset_at ?? undefined,
     })),
   });
@@ -138,17 +155,28 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const response = await supabaseRequest("wallet_profiles?on_conflict=wallet_address", {
+  const profilePayload = {
+    wallet_address: wallet,
+    display_name: body.displayName ?? body.display_name ?? "",
+    connected_app_count: body.connectedApps ?? body.connected_app_count ?? 0,
+    reward_points: body.rewardPoints ?? body.reward_points ?? 0,
+    ...(body.guardianData ? { guardian_data: body.guardianData } : {}),
+    last_seen_at: now,
+  };
+  let response = await supabaseRequest("wallet_profiles?on_conflict=wallet_address", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({
-      wallet_address: wallet,
-      display_name: body.displayName ?? body.display_name ?? "",
-      connected_app_count: body.connectedApps ?? body.connected_app_count ?? 0,
-      reward_points: body.rewardPoints ?? body.reward_points ?? 0,
-      last_seen_at: now,
-    }),
+    body: JSON.stringify(profilePayload),
   });
+
+  if (response && !response.ok && body.guardianData) {
+    const { guardian_data: _guardianData, ...legacyProfilePayload } = profilePayload;
+    response = await supabaseRequest("wallet_profiles?on_conflict=wallet_address", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(legacyProfilePayload),
+    });
+  }
 
   if (!response) {
     return NextResponse.json({ ok: true, mode: "local-only" });
@@ -201,6 +229,13 @@ export async function DELETE(request: NextRequest) {
       connected_app_count: 0,
       health_permissions: {},
       reward_points: 0,
+      guardian_data: {
+        guardian: null,
+        careXp: 0,
+        traits: [],
+        lastProofWeek: "",
+        proofReference: "",
+      },
       last_seen_at: now,
       reset_at: now,
     }),

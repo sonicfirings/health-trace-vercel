@@ -5,10 +5,14 @@ create table if not exists public.wallet_profiles (
   connected_app_count integer not null default 0,
   health_permissions jsonb not null default '{}'::jsonb,
   reward_points integer not null default 0,
+  guardian_data jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now(),
   reset_at timestamptz
 );
+
+alter table public.wallet_profiles
+  add column if not exists guardian_data jsonb not null default '{}'::jsonb;
 
 create table if not exists public.daily_records (
   wallet_address text not null references public.wallet_profiles(wallet_address) on delete cascade,

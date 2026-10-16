@@ -14,9 +14,11 @@ const config: Config = {
         foreground: "#f7f7f2",
         trace: {
           green: "#9DFF7A",
-          deep: "#183F22",
-          mist: "#D9FFD0",
-          dim: "#5D7A63",
+          purple: "#836EF9",
+          deep: "#21143A",
+          mist: "#F0ECFF",
+          dim: "#716982",
+          amber: "#FFB84D",
         },
         border: "rgba(255,255,255,0.1)",
       },
@@ -33,7 +35,7 @@ const config: Config = {
       },
       boxShadow: {
         soft: "0 24px 80px rgba(0, 0, 0, 0.42)",
-        glow: "0 0 64px rgba(157, 255, 122, 0.12)",
+        glow: "0 0 64px rgba(131, 110, 249, 0.18)",
       },
       keyframes: {
         drift: {

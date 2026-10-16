@@ -1,10 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { BrowserProvider, Contract, id, type Eip1193Provider } from "ethers";
 import {
   Activity,
   ArrowRight,
+  BadgeCheck,
   BrainCircuit,
   CalendarCheck,
   Check,
@@ -13,10 +16,13 @@ import {
   Droplets,
   Dumbbell,
   FileText,
+  Gem,
   HeartPulse,
   LayoutDashboard,
+  LockKeyhole,
   MessageCircle,
   Moon,
+  RefreshCw,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -25,6 +31,7 @@ import {
   Wallet,
   Waves,
   Watch,
+  Zap,
 } from "lucide-react";
 import {
   Area,
@@ -81,6 +88,25 @@ const savedContextWalletAddress = "0xEf6fdfe87081da6acC6E4755d095b8C23568577F";
 const walletStorageKey = "health-trace-web3-wallet";
 const walletProfileStoragePrefix = "health-trace-web3-profile:";
 const walletRegistryStorageKey = "health-trace-web3-wallet-registry";
+const chogGenesisContractAddress =
+  process.env.NEXT_PUBLIC_CHOG_GENESIS_CONTRACT ?? "0xc96d31f8626c6d03fae5dcd3d61e3fb9f4a73763";
+const traceChogGuardianContractAddress = process.env.NEXT_PUBLIC_TRACE_CHOG_GUARDIAN_CONTRACT ?? "";
+const chogGuardianImage = "/chog/chog-guardian.png";
+const chogGenesisAbi = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+];
+const traceChogGuardianAbi = [
+  "function claimWeeklyProof(uint256 tokenId, uint32 weekKey, bytes32 summaryHash)",
+];
+
+type ChogGuardianProfile = {
+  tokenId: string;
+  label: string;
+  mode: "wallet" | "preview";
+  image: string;
+  activatedAt: string;
+};
 
 type WalletRegistryEntry = {
   wallet: string;
@@ -90,11 +116,23 @@ type WalletRegistryEntry = {
   connectedApps: number;
   rewardPoints: number;
   resetAt?: string;
+  guardianData?: {
+    guardian: ChogGuardianProfile | null;
+    careXp: number;
+    traits: string[];
+    lastProofWeek: string;
+    proofReference: string;
+  };
 };
 
 type WalletProfile = {
   displayName: string;
   resetAt?: string;
+  chogGuardian: ChogGuardianProfile | null;
+  careXp: number;
+  chogTraits: string[];
+  lastGuardianProofWeek: string;
+  guardianProofTxHash: string;
   healthContextConnectedDate: string;
   dailyRecords: Record<string, HealthDailyRecord>;
   lastTaskResetDate: string;
@@ -222,6 +260,61 @@ type ProofAction = {
   completed: boolean;
 };
 
+const careXpByMission: Record<string, number> = {
+  "Complete 20-20-20 eye break": 15,
+  "Log FOMO / FUD check-in": 20,
+  "Take a recovery walk": 25,
+  "Keep midnight boundary": 35,
+};
+
+const getPreviewChogTokenId = (wallet: string) => {
+  const tail = wallet.replace(/^0x/, "").slice(-6);
+  const numeric = Number.parseInt(tail || "1", 16);
+  return String((Number.isFinite(numeric) ? numeric : 0) % 1969 + 1);
+};
+
+const getGuardianMood = (record: HealthDailyRecord | null) => {
+  if (!record) return { label: "Waiting for signals", tone: "text-white/50", aura: "from-white/10 to-white/[0.02]" };
+  if (record.healthScore >= 84) return { label: "Protected", tone: "text-trace-green", aura: "from-trace-green/30 to-sky-300/10" };
+  if (record.healthScore >= 70) return { label: "Alert", tone: "text-amber-200", aura: "from-amber-300/24 to-trace-green/8" };
+  return { label: "Recovering", tone: "text-rose-200", aura: "from-rose-300/24 to-violet-300/10" };
+};
+
+function GuardianArtwork({ className = "" }: { className?: string }) {
+  return (
+    <div className={`relative overflow-hidden rounded-[1.2rem] border border-white/14 bg-[#24153d] ${className}`}>
+      <Image
+        src={chogGuardianImage}
+        alt="Chog guardian holding a Chog card"
+        fill
+        priority
+        sizes="(max-width: 768px) 180px, 240px"
+        className="object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#101510]/55 via-transparent to-white/5" />
+    </div>
+  );
+}
+
+function BrandMark({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`relative isolate overflow-hidden rounded-[1rem] bg-[#21143A] shadow-[0_14px_38px_rgba(52,35,92,0.28)] ring-1 ring-[#836EF9]/45 ${className}`}
+      aria-label="Health Trace Chog Guardian"
+    >
+      <Image
+        src={chogGuardianImage}
+        alt=""
+        fill
+        sizes="56px"
+        className="scale-[1.32] object-cover object-[50%_38%]"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#21143A]/48 via-transparent to-[#9DFF7A]/8" />
+      <div className="absolute inset-x-1 bottom-1 h-0.5 rounded-full bg-trace-green shadow-[0_0_12px_rgba(157,255,122,0.88)]" />
+    </div>
+  );
+}
+
 const demoConnectedHealthApps = ["Apple Health", "Samsung Health", "Google Fit"];
 const emptyHealthPermissions: Record<string, string[]> = {
   "Apple Health": [],
@@ -238,7 +331,7 @@ const demoHealthPermissions: Record<string, string[]> = {
 };
 
 const tabDescriptions: Record<HealthTab, string> = {
-  Home: "Web3 health dashboard",
+  Home: "Health Trace dashboard",
   Guardian: "AI health reasoning",
   "Market Stress": "Volatility and body load",
   Recovery: "Night watch recovery",
@@ -559,7 +652,7 @@ const weeklyDemoContexts: Omit<
     recoveryCopy:
       "Your recovery context is close to baseline. The best move is to preserve it into the next week.",
     briefItems: [
-      { status: "Excellent", title: "Web3 health is near baseline.", detail: "Sleep, screen, and market stress are all controlled.", color: "bg-trace-green" },
+      { status: "Excellent", title: "Health Trace is near baseline.", detail: "Sleep, screen, and market stress are all controlled.", color: "bg-trace-green" },
       { status: "Clear", title: "Decision risk is low.", detail: "No major alert unless late market loops reopen.", color: "bg-emerald-300" },
       { status: "Proof", title: "One light action keeps momentum.", detail: "Complete a healthy proof without over-optimizing the day.", color: "bg-sky-300" },
     ],
@@ -568,7 +661,7 @@ const weeklyDemoContexts: Omit<
 
 const homeSignals = [
   {
-    label: "Web3 Health Score",
+    label: "Health Trace Score",
     value: "86",
     detail: "Stable, with market pressure elevated",
     icon: HeartPulse,
@@ -633,13 +726,13 @@ const briefItems = [
 const emptyHomeSignals = homeSignals.map((signal) => ({
   ...signal,
   value:
-    signal.label === "Web3 Health Score"
+    signal.label === "Health Trace Score"
       ? "0"
       : signal.label === "Proof Streak"
         ? "0 days"
         : "--",
   detail:
-    signal.label === "Web3 Health Score"
+    signal.label === "Health Trace Score"
       ? "Connect health apps to build a baseline"
       : signal.label === "Proof Streak"
         ? "No healthy actions verified yet"
@@ -948,17 +1041,17 @@ function MetricCard({
     <motion.div
       whileHover={{ y: -5, scale: 1.015 }}
       transition={{ duration: 0.25 }}
-      className="flex h-full min-h-[10.5rem] flex-col rounded-[1.35rem] border border-[#e1e9df] bg-[#fbfdf9] p-4 shadow-[0_16px_50px_rgba(16,21,16,0.04)] sm:min-h-[12.5rem]"
+      className="flex h-full min-h-[10.5rem] flex-col rounded-[1.35rem] border border-[#E2DCF0] bg-[#FCFBFF] p-4 shadow-[0_16px_50px_rgba(52,35,92,0.055)] sm:min-h-[12.5rem]"
     >
       <div className="mb-4 flex items-center justify-between">
-        <div className="flex size-9 items-center justify-center rounded-2xl bg-[#eef5ec]">
+        <div className="flex size-9 items-center justify-center rounded-2xl bg-[#F0ECFF]">
           <Icon className={`size-4 ${tone}`} />
         </div>
-        <TrendingUp className="size-4 text-[#9aac9a]" />
+        <TrendingUp className="size-4 text-[#9A8CBA]" />
       </div>
-      <p className="text-xs text-[#6b776b]">{label}</p>
-      <p className="mt-1 text-2xl font-medium text-[#101510]">{value}</p>
-      <p className="mt-1 text-xs leading-5 text-[#7a867a]">{detail}</p>
+      <p className="text-xs text-[#716982]">{label}</p>
+      <p className="mt-1 text-2xl font-medium text-[#21143A]">{value}</p>
+      <p className="mt-1 text-xs leading-5 text-[#817793]">{detail}</p>
       <div className="mt-auto pt-3">
         <MiniChart data={chart} />
       </div>
@@ -979,13 +1072,13 @@ function MobileShell({
 }) {
   return (
     <section
-      className={`overflow-hidden rounded-[2rem] p-5 shadow-[0_28px_80px_rgba(16,21,16,0.12)] ${
+      className={`overflow-hidden rounded-[2rem] p-5 shadow-[0_28px_80px_rgba(52,35,92,0.14)] ${
         dark
-          ? "bg-[#101510] text-white"
-          : "border border-[#dfe7dc] bg-white/86 text-[#101510] backdrop-blur-2xl"
+          ? "bg-[#21143A] text-white"
+          : "border border-[#DED6EE] bg-white/86 text-[#21143A] backdrop-blur-2xl"
       }`}
     >
-      <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${dark ? "text-trace-green/76" : "text-[#607260]"}`}>
+      <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${dark ? "text-trace-green/76" : "text-[#7555DA]"}`}>
         {eyebrow}
       </p>
       <h2 className="mt-2 text-[2.35rem] font-medium leading-[0.95] tracking-normal">{title}</h2>
@@ -1006,17 +1099,17 @@ function MobilePillCard({
   icon: typeof LayoutDashboard;
 }) {
   return (
-    <div className="rounded-[1.4rem] border border-[#e1e9df] bg-[#fbfdf9] p-4 shadow-[0_14px_40px_rgba(16,21,16,0.045)]">
+    <div className="rounded-[1.4rem] border border-[#E2DCF0] bg-[#FCFBFF] p-4 shadow-[0_14px_40px_rgba(52,35,92,0.055)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs text-[#667466]">{label}</p>
-          <p className="mt-1 text-2xl font-medium leading-none text-[#101510]">{value}</p>
+          <p className="text-xs text-[#716982]">{label}</p>
+          <p className="mt-1 text-2xl font-medium leading-none text-[#21143A]">{value}</p>
         </div>
-        <div className="flex size-9 items-center justify-center rounded-2xl bg-[#eef5ec] text-[#3a8f4d]">
+        <div className="flex size-9 items-center justify-center rounded-2xl bg-[#F0ECFF] text-[#7555DA]">
           <Icon size={16} />
         </div>
       </div>
-      <p className="mt-3 text-xs leading-5 text-[#687668]">{detail}</p>
+      <p className="mt-3 text-xs leading-5 text-[#817793]">{detail}</p>
     </div>
   );
 }
@@ -1077,7 +1170,7 @@ function EyeResetPanel({
       className={`relative overflow-hidden rounded-[1.75rem] border ${
         compact
           ? "border-white/10 bg-white/[0.055] p-4 text-white"
-          : "border-[#dfe7dc] bg-[#101510] p-5 text-white shadow-[0_24px_75px_rgba(16,21,16,0.16)]"
+          : "border-[#836EF9]/30 bg-[#21143A] p-5 text-white shadow-[0_24px_75px_rgba(52,35,92,0.22)]"
       }`}
     >
       <motion.div
@@ -1088,7 +1181,7 @@ function EyeResetPanel({
       />
       <div className="relative grid gap-4 sm:grid-cols-[auto_1fr] sm:items-center">
         <div className="flex size-32 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_var(--eye-progress),rgba(255,255,255,0.12)_0deg)] p-1.5" style={{ "--eye-progress": `${progress * 3.6}deg` } as React.CSSProperties}>
-          <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510] ring-1 ring-white/10">
+          <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#21143A] ring-1 ring-white/10">
             <p className="text-4xl font-medium leading-none">{isOnCooldown ? 0 : secondsLeft}</p>
             <p className="mt-1 text-[0.62rem] uppercase tracking-[0.2em] text-trace-green">seconds</p>
           </div>
@@ -1143,6 +1236,11 @@ function MobileTabScreen({
   openJournalCheckIn,
   rewardPoints,
   completedRewardMissions,
+  chogGuardian,
+  careXp,
+  guardianLevel,
+  guardianLevelProgress,
+  guardianTraits,
   currentDayRecord,
   isDemoAccount,
   proofActions,
@@ -1151,6 +1249,10 @@ function MobileTabScreen({
   weeklyReportStats,
   weeklyReportSummary,
   syncProofAction,
+  guardianWeeklyProofReady,
+  guardianWeeklyProofClaimed,
+  guardianClaimState,
+  claimWeeklyGuardianProof,
 }: {
   activeTab: Exclude<HealthTab, "Home">;
   setActiveTab: (tab: HealthTab) => void;
@@ -1177,6 +1279,11 @@ function MobileTabScreen({
   openJournalCheckIn: (label: string) => void;
   rewardPoints: number;
   completedRewardMissions: string[];
+  chogGuardian: ChogGuardianProfile | null;
+  careXp: number;
+  guardianLevel: number;
+  guardianLevelProgress: number;
+  guardianTraits: string[];
   currentDayRecord: HealthDailyRecord | null;
   isDemoAccount: boolean;
   proofActions: ProofAction[];
@@ -1185,8 +1292,13 @@ function MobileTabScreen({
   weeklyReportStats: string[][];
   weeklyReportSummary: string;
   syncProofAction: (proof: ProofAction) => void;
+  guardianWeeklyProofReady: boolean;
+  guardianWeeklyProofClaimed: boolean;
+  guardianClaimState: "" | "preparing" | "wallet" | "confirmed";
+  claimWeeklyGuardianProof: () => void;
 }) {
   const hasMobileGuardianContext = isDemoAccount || connectedHealthApps.length > 0;
+  const mobileChogMood = getGuardianMood(currentDayRecord);
   const mobileGuardianTitle = currentDayRecord ? currentDayRecord.guardianTitle : "Market volatility is live.";
   const mobileGuardianCopy = currentDayRecord
     ? currentDayRecord.guardianCopy
@@ -1536,13 +1648,26 @@ function MobileTabScreen({
             <div>
               <p className="text-sm text-white/50">Health Trace Points</p>
               <p className="mt-1 text-5xl font-medium leading-none">{rewardPoints.toLocaleString()}</p>
-              <p className="mt-2 text-sm text-trace-green">{isDemoAccount ? "Level 4 Guardian" : "Level 1 Guardian"}</p>
+              <p className="mt-2 text-sm text-trace-green">Level {guardianLevel} Chog Guardian</p>
             </div>
             <div className="rounded-[1.15rem] border border-trace-green/20 bg-trace-green/10 px-3 py-2 text-center">
               <p className="text-2xl font-medium">{isDemoAccount ? "6" : "0"}</p>
               <p className="text-[0.62rem] uppercase tracking-[0.18em] text-white/46">Streak</p>
             </div>
           </div>
+          {chogGuardian ? (
+            <div className="mt-5 grid grid-cols-[6rem_1fr] gap-4 border-t border-white/10 pt-5">
+              <GuardianArtwork className="aspect-square" />
+              <div className="min-w-0 py-1">
+                <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/68">{chogGuardian.label}</p>
+                <p className={`mt-2 text-xl font-medium ${mobileChogMood.tone}`}>{mobileChogMood.label}</p>
+                <p className="mt-1 text-xs text-white/46">{careXp} Care XP · {guardianTraits.length} traits</p>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-trace-green" style={{ width: `${guardianLevelProgress}%` }} />
+                </div>
+              </div>
+            </div>
+          ) : null}
         </MobileShell>
         <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
           <p className="text-sm font-medium text-[#172117]">Today&apos;s missions</p>
@@ -1598,7 +1723,7 @@ function MobileTabScreen({
       <div className="space-y-4">
         <MobileShell eyebrow="AI Chat" title="Ask your health context." dark>
           <p className="text-sm leading-6 text-white/62">
-            The Guardian answers with your health signals, proof history, and Web3 behavior context.
+            Chog Guardian answers with your health signals, proof history, and onchain behavior context.
           </p>
         </MobileShell>
         <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
@@ -1665,6 +1790,28 @@ function MobileTabScreen({
             ))}
           </div>
         </section>
+        {chogGuardian ? (
+          <section className="grid grid-cols-[5.5rem_1fr] gap-4 rounded-[1.75rem] bg-[#21143a] p-3 text-white shadow-[0_20px_60px_rgba(33,20,58,0.2)]">
+            <GuardianArtwork className="aspect-square" />
+            <div className="min-w-0 py-1 pr-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-violet-200/70">Weekly Chog proof</p>
+                <span className="text-[0.65rem] text-trace-green">
+                  {guardianWeeklyProofClaimed ? "Claimed" : guardianWeeklyProofReady ? "Ready" : "Locked"}
+                </span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-white/46">Claim the action summary without publishing raw health signals.</p>
+              <Button
+                type="button"
+                onClick={claimWeeklyGuardianProof}
+                disabled={!guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
+                className="mt-3 h-9 w-full rounded-full bg-trace-green text-xs font-semibold text-[#071006] hover:bg-[#adff91] disabled:bg-white/10 disabled:text-white/32"
+              >
+                {guardianClaimState ? "Confirm in wallet..." : guardianWeeklyProofClaimed ? "Proof claimed" : "Sign weekly proof"}
+              </Button>
+            </div>
+          </section>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           {proofActions.map((proof) => {
             const Icon = proof.icon;
@@ -1713,6 +1860,16 @@ function MobileTabScreen({
         </Button>
         {walletError ? <p className="mt-3 text-xs leading-5 text-rose-500">{walletError}</p> : null}
       </section>
+      {chogGuardian ? (
+        <section className="grid grid-cols-[5.5rem_1fr] gap-4 rounded-[1.75rem] bg-[#21143a] p-3 text-white shadow-[0_20px_60px_rgba(33,20,58,0.18)]">
+          <GuardianArtwork className="aspect-square" />
+          <div className="min-w-0 py-2 pr-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/68">Active Chog guardian</p>
+            <p className="mt-2 truncate text-lg font-medium">{chogGuardian.label}</p>
+            <p className="mt-1 text-xs text-white/42">Level {guardianLevel} · {chogGuardian.mode === "wallet" ? "Ownership verified" : "Preview mode"}</p>
+          </div>
+        </section>
+      ) : null}
       <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
         <p className="text-sm font-medium text-[#172117]">Health Apps</p>
         <div className="mt-4 grid grid-cols-4 gap-2">
@@ -1810,6 +1967,14 @@ export default function Web3HealthPage() {
   const [displayName, setDisplayName] = useState("");
   const [pendingDisplayName, setPendingDisplayName] = useState("");
   const [walletResetAt, setWalletResetAt] = useState("");
+  const [chogGuardian, setChogGuardian] = useState<ChogGuardianProfile | null>(null);
+  const [careXp, setCareXp] = useState(0);
+  const [chogTraits, setChogTraits] = useState<string[]>([]);
+  const [lastGuardianProofWeek, setLastGuardianProofWeek] = useState("");
+  const [guardianProofTxHash, setGuardianProofTxHash] = useState("");
+  const [isDiscoveringChog, setIsDiscoveringChog] = useState(false);
+  const [chogActivationError, setChogActivationError] = useState("");
+  const [guardianClaimState, setGuardianClaimState] = useState<"" | "preparing" | "wallet" | "confirmed">("");
   const [eyeBreakCount, setEyeBreakCount] = useState(0);
   const [isEyeResetOnCooldown, setIsEyeResetOnCooldown] = useState(false);
   const [eyeResetCooldownSeconds, setEyeResetCooldownSeconds] = useState(0);
@@ -1883,6 +2048,22 @@ export default function Web3HealthPage() {
       ? { ...createDailyRecord(todayKey), ...dailyRecords[todayKey] }
       : createDailyRecord(todayKey)
     : null;
+  const guardianLevel = Math.min(6, Math.max(1, Math.floor(careXp / 100) + 1));
+  const guardianLevelFloor = (guardianLevel - 1) * 100;
+  const guardianLevelProgress = guardianLevel >= 6 ? 100 : Math.min(100, careXp - guardianLevelFloor);
+  const guardianMood = getGuardianMood(currentDayRecord);
+  const guardianTraits = Array.from(
+    new Set([
+      ...chogTraits,
+      ...(guardianLevel >= 2 ? ["Focus antenna"] : []),
+      ...(guardianLevel >= 3 ? ["Recovery aura"] : []),
+      ...(guardianLevel >= 4 ? ["Calm trader"] : []),
+      ...(guardianLevel >= 6 ? ["Builder balance"] : []),
+    ]),
+  );
+  const guardianProofWeek = getGmt8WeekKey();
+  const guardianWeeklyProofReady = Boolean(chogGuardian && completedProofCount >= 3);
+  const guardianWeeklyProofClaimed = lastGuardianProofWeek === guardianProofWeek;
   const firstSavedRecordDate = Object.keys(dailyRecords).sort()[0] ?? "";
   const chartConnectedDate = isDemoAccount
     ? getGmt8WeekKey()
@@ -1915,7 +2096,7 @@ export default function Web3HealthPage() {
   const dashboardRecoverySeries = dashboardTrend.map((point) => point.sleep ?? 0);
   const dashboardMarketSeries = dashboardTrend.map((point) => point.market ?? 0);
   const dashboardSignals = (hasLiveHealthContext ? homeSignals : emptyHomeSignals).map((signal) => {
-    if (signal.label === "Web3 Health Score") {
+    if (signal.label === "Health Trace Score") {
       return {
         ...signal,
         value: currentDayRecord ? String(currentDayRecord.healthScore) : "0",
@@ -1976,13 +2157,20 @@ export default function Web3HealthPage() {
     : "Connect a health source in Settings to start building your private baseline.";
   const rewardStats = [
     ["HT Points", rewardPoints.toLocaleString()],
-    ["Level", isDemoAccount ? "4" : "1"],
+    ["Level", String(guardianLevel)],
     ["Streak", proofStreakLabel],
-    ["Badge status", "Not ready"],
+    ["Badge status", guardianLevel >= 6 ? "Mint ready" : "Not ready"],
   ];
-  const dashboardBadges = hasLiveHealthContext
-    ? healthBadges
-    : healthBadges.map((badge) => ({ ...badge, status: "NOT READY" }));
+  const dashboardBadges = healthBadges.map((badge) => {
+    if (!hasLiveHealthContext) return { ...badge, status: "NOT READY" };
+    if (badge.label === "Builder Balance") {
+      return { ...badge, status: guardianLevel >= 6 ? "Mint ready" : "Not ready" };
+    }
+    if (badge.label === "Calm Trader") {
+      return { ...badge, status: `${Math.min(100, Math.max(0, Math.round((careXp / 500) * 100)))}%` };
+    }
+    return badge;
+  });
   const dashboardMarketDrivers = hasLiveHealthContext
     ? marketDrivers.map((driver) => {
         if (driver.label === "Screen exposure") {
@@ -2065,6 +2253,7 @@ export default function Web3HealthPage() {
           displayName: entry.displayName,
           connectedApps: entry.connectedApps,
           rewardPoints: entry.rewardPoints,
+          guardianData: entry.guardianData,
         }),
       });
       if (!response.ok) {
@@ -2332,8 +2521,25 @@ export default function Web3HealthPage() {
       connectedApps: connectedHealthApps.length,
       rewardPoints,
       resetAt: existing?.resetAt,
+      guardianData: {
+        guardian: chogGuardian,
+        careXp,
+        traits: chogTraits,
+        lastProofWeek: lastGuardianProofWeek,
+        proofReference: guardianProofTxHash,
+      },
     });
-  }, [connectedHealthApps.length, displayName, rewardPoints, walletAddress]);
+  }, [
+    careXp,
+    chogGuardian,
+    chogTraits,
+    connectedHealthApps.length,
+    displayName,
+    guardianProofTxHash,
+    lastGuardianProofWeek,
+    rewardPoints,
+    walletAddress,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2342,6 +2548,12 @@ export default function Web3HealthPage() {
       setDisplayName("");
       setPendingDisplayName("");
       setWalletResetAt(resetAt);
+      setChogGuardian(null);
+      setCareXp(0);
+      setChogTraits([]);
+      setLastGuardianProofWeek("");
+      setGuardianProofTxHash("");
+      setChogActivationError("");
       setEyeBreakCount(0);
       setWeeklyEyeBreaks(0);
       setWeeklyStressChecks(0);
@@ -2386,6 +2598,17 @@ export default function Web3HealthPage() {
         setDisplayName("Mervyn");
         setPendingDisplayName("Mervyn");
         setWalletResetAt("");
+        setChogGuardian({
+          tokenId: "577",
+          label: "CHOG Guardian #577",
+          mode: "preview",
+          image: chogGuardianImage,
+          activatedAt: new Date().toISOString(),
+        });
+        setCareXp(340);
+        setChogTraits(["Focus antenna", "Recovery aura", "Calm trader"]);
+        setLastGuardianProofWeek("");
+        setGuardianProofTxHash("");
         setEyeBreakCount(2);
         setWeeklyEyeBreaks(18);
         setWeeklyStressChecks(9);
@@ -2429,6 +2652,11 @@ export default function Web3HealthPage() {
         setDisplayName(profile.displayName ?? "");
         setPendingDisplayName(profile.displayName ?? "");
         setWalletResetAt(profile.resetAt ?? backendResetAt ?? "");
+        setChogGuardian(profile.chogGuardian ?? backendProfile?.guardianData?.guardian ?? null);
+        setCareXp(profile.careXp ?? backendProfile?.guardianData?.careXp ?? 0);
+        setChogTraits(profile.chogTraits ?? backendProfile?.guardianData?.traits ?? []);
+        setLastGuardianProofWeek(profile.lastGuardianProofWeek ?? backendProfile?.guardianData?.lastProofWeek ?? "");
+        setGuardianProofTxHash(profile.guardianProofTxHash ?? backendProfile?.guardianData?.proofReference ?? "");
         setEyeBreakCount(shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0);
         setWeeklyEyeBreaks(shouldResetWeeklyCounters ? 0 : profile.weeklyEyeBreaks ?? 0);
         setWeeklyStressChecks(shouldResetWeeklyCounters ? 0 : profile.weeklyStressChecks ?? 0);
@@ -2492,6 +2720,17 @@ export default function Web3HealthPage() {
       }
 
       resetToEmptyWallet(normalizedWallet);
+      if (backendProfile?.displayName) {
+        setDisplayName(backendProfile.displayName);
+        setPendingDisplayName(backendProfile.displayName);
+      }
+      if (backendProfile?.guardianData) {
+        setChogGuardian(backendProfile.guardianData.guardian);
+        setCareXp(backendProfile.guardianData.careXp ?? 0);
+        setChogTraits(backendProfile.guardianData.traits ?? []);
+        setLastGuardianProofWeek(backendProfile.guardianData.lastProofWeek ?? "");
+        setGuardianProofTxHash(backendProfile.guardianData.proofReference ?? "");
+      }
     };
 
     void hydrateWallet();
@@ -2508,6 +2747,11 @@ export default function Web3HealthPage() {
     const profile: WalletProfile = {
       displayName,
       resetAt: walletResetAt || undefined,
+      chogGuardian,
+      careXp,
+      chogTraits,
+      lastGuardianProofWeek,
+      guardianProofTxHash,
       healthContextConnectedDate,
       dailyRecords,
       lastTaskResetDate: getGmt8DateKey(),
@@ -2532,6 +2776,9 @@ export default function Web3HealthPage() {
 
     window.localStorage.setItem(getWalletProfileKey(walletAddress), JSON.stringify(profile));
   }, [
+    careXp,
+    chogGuardian,
+    chogTraits,
     completedGuardianActions,
     completedMarketActions,
     completedProofActions,
@@ -2543,9 +2790,11 @@ export default function Web3HealthPage() {
     eyeResetCooldownSeconds,
     healthContextConnectedDate,
     healthPermissions,
+    guardianProofTxHash,
     isDemoAccount,
     isEyeResetOnCooldown,
     journalSelections,
+    lastGuardianProofWeek,
     postureResetDone,
     rewardPoints,
     selectedHealthApp,
@@ -2684,6 +2933,10 @@ export default function Web3HealthPage() {
     setCompletedRewardMissions((current) => {
       if (current.includes(mission)) return current;
       setRewardPoints((pointsCurrent) => pointsCurrent + points);
+      const missionCareXp = careXpByMission[mission] ?? 0;
+      if (missionCareXp > 0) {
+        setCareXp((currentXp) => currentXp + missionCareXp);
+      }
       updateTodayRecord((record) => ({
         ...record,
         completedRewardMissions: record.completedRewardMissions.includes(mission)
@@ -2731,6 +2984,7 @@ export default function Web3HealthPage() {
       }
       if (proof.label === "Hydration check") {
         setRewardPoints((current) => current + 20);
+        setCareXp((current) => current + 10);
       }
       setSyncingProofAction("");
     }, 3000);
@@ -2834,6 +3088,103 @@ export default function Web3HealthPage() {
     setDisplayName(nextName);
   };
 
+  const activatePreviewGuardian = () => {
+    if (!walletAddress) return;
+    const tokenId = getPreviewChogTokenId(walletAddress);
+    setChogGuardian({
+      tokenId,
+      label: `CHOG #${tokenId}`,
+      mode: "preview",
+      image: chogGuardianImage,
+      activatedAt: new Date().toISOString(),
+    });
+    setChogActivationError("");
+  };
+
+  const discoverChogGuardian = async () => {
+    setChogActivationError("");
+    if (!window.ethereum || !walletAddress) {
+      setChogActivationError("Connect and unlock your wallet first.");
+      return;
+    }
+
+    setIsDiscoveringChog(true);
+    try {
+      const provider = new BrowserProvider(window.ethereum as Eip1193Provider);
+      const network = await provider.getNetwork();
+      if (network.chainId !== BigInt(143)) {
+        throw new Error("Switch your wallet to Monad Mainnet, then scan again.");
+      }
+      const collection = new Contract(chogGenesisContractAddress, chogGenesisAbi, provider);
+      const balance = (await collection.balanceOf(walletAddress)) as bigint;
+      if (balance === BigInt(0)) {
+        throw new Error("No Chog Genesis NFT was found in this wallet. Use preview mode to test the full guardian loop.");
+      }
+
+      let tokenId = getPreviewChogTokenId(walletAddress);
+      try {
+        tokenId = String(await collection.tokenOfOwnerByIndex(walletAddress, 0));
+      } catch {
+        // Some ERC-721 collections omit enumerable methods; ownership is still verified by balanceOf.
+      }
+
+      setChogGuardian({
+        tokenId,
+        label: `CHOG #${tokenId}`,
+        mode: "wallet",
+        image: chogGuardianImage,
+        activatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      setChogActivationError(error instanceof Error ? error.message : "Chog ownership could not be verified.");
+    } finally {
+      setIsDiscoveringChog(false);
+    }
+  };
+
+  const claimWeeklyGuardianProof = async () => {
+    if (!chogGuardian || !guardianWeeklyProofReady || guardianWeeklyProofClaimed || !window.ethereum) return;
+
+    setChogActivationError("");
+    setGuardianClaimState("preparing");
+    try {
+      const provider = new BrowserProvider(window.ethereum as Eip1193Provider);
+      const signer = await provider.getSigner();
+      const summaryHash = id(
+        [walletAddress, guardianProofWeek, completedProofCount, weeklyEyeBreakDisplay, weeklyStressCheckDisplay].join(":"),
+      );
+      let proofReference = "";
+
+      if (traceChogGuardianContractAddress && chogGuardian.mode === "wallet") {
+        setGuardianClaimState("wallet");
+        const guardianContract = new Contract(traceChogGuardianContractAddress, traceChogGuardianAbi, signer);
+        const transaction = await guardianContract.claimWeeklyProof(
+          BigInt(chogGuardian.tokenId),
+          Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000)),
+          summaryHash,
+        );
+        proofReference = transaction.hash as string;
+        await transaction.wait();
+      } else {
+        setGuardianClaimState("wallet");
+        const signature = await signer.signMessage(
+          `Trace Health weekly Chog proof\nWeek: ${guardianProofWeek}\nGuardian: ${chogGuardian.label}\nSummary: ${summaryHash}`,
+        );
+        proofReference = `signed:${signature.slice(0, 18)}`;
+      }
+
+      setGuardianProofTxHash(proofReference);
+      setLastGuardianProofWeek(guardianProofWeek);
+      setCareXp((current) => current + 60);
+      setChogTraits((current) => (current.includes("Weekly proof aura") ? current : [...current, "Weekly proof aura"]));
+      setGuardianClaimState("confirmed");
+      window.setTimeout(() => setGuardianClaimState(""), 1800);
+    } catch (error) {
+      setGuardianClaimState("");
+      setChogActivationError(error instanceof Error ? error.message : "The weekly proof claim was cancelled.");
+    }
+  };
+
   const toggleHealthPermission = (app: string, permission: string) => {
     setHealthPermissions((current) => {
       const existing = current[app] ?? [];
@@ -2876,30 +3227,28 @@ export default function Web3HealthPage() {
 
   if (!walletAddress) {
     return (
-      <main className="min-h-screen overflow-hidden bg-[#f3f7f0] text-[#101510]">
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(149,255,122,0.42),transparent_27rem),radial-gradient(circle_at_50%_80%,rgba(16,21,16,0.12),transparent_32rem),linear-gradient(180deg,#fbfff8,#edf4eb_54%,#f9fbf7)]" />
+      <main className="min-h-screen overflow-hidden bg-[#F3F0FF] text-[#21143A]">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_22%_0%,rgba(157,255,122,0.32),transparent_26rem),radial-gradient(circle_at_78%_12%,rgba(131,110,249,0.38),transparent_32rem),linear-gradient(180deg,#FCFBFF,#EEE9FF_54%,#F9F7FF)]" />
         <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-10">
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full overflow-hidden rounded-[3rem] border border-[#dfe9dc] bg-white/70 p-5 shadow-[0_42px_150px_rgba(16,21,16,0.16)] backdrop-blur-3xl sm:p-8"
+            className="relative w-full overflow-hidden rounded-[3rem] border border-[#DDD4F4] bg-white/72 p-5 shadow-[0_42px_150px_rgba(52,35,92,0.2)] backdrop-blur-3xl sm:p-8"
           >
-            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.9),rgba(218,255,205,0.44)_45%,rgba(255,255,255,0.72))]" />
-            <div className="absolute left-1/2 top-1/2 size-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-trace-green/20 blur-3xl" />
+            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.94),rgba(237,231,255,0.72)_48%,rgba(225,255,215,0.58))]" />
+            <div className="absolute left-1/2 top-1/2 size-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-trace-purple/20 blur-3xl" />
 
-            <div className="relative min-h-[40rem] overflow-hidden rounded-[2.45rem] border border-white/70 bg-[#0d150f] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_30%,rgba(149,255,122,0.2),transparent_24rem),radial-gradient(circle_at_75%_70%,rgba(110,190,255,0.12),transparent_20rem)]" />
+            <div className="relative min-h-[40rem] overflow-hidden rounded-[2.45rem] border border-white/20 bg-[#171022] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_30%,rgba(157,255,122,0.18),transparent_24rem),radial-gradient(circle_at_78%_64%,rgba(131,110,249,0.34),transparent_26rem)]" />
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/36 to-transparent" />
 
               <div className="relative flex min-h-[40rem] max-w-5xl flex-col justify-between p-7 sm:p-10 lg:p-12">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-13 items-center justify-center rounded-2xl bg-white text-[#101510] shadow-[0_18px_50px_rgba(157,255,122,0.15)]">
-                    <HeartPulse size={22} />
-                  </div>
+                  <BrandMark className="size-13" />
                   <div>
                     <p className="text-sm font-semibold tracking-[0.26em] text-white/82">HEALTH TRACE</p>
-                    <p className="text-sm text-white/46">Web3 health guardian</p>
+                    <p className="text-sm font-medium text-trace-green/72">Chog Guardian</p>
                   </div>
                 </div>
 
@@ -2945,20 +3294,18 @@ export default function Web3HealthPage() {
 
   if (!isDemoAccount && !displayName.trim()) {
     return (
-      <main className="min-h-screen overflow-hidden bg-[#f3f7f0] text-[#101510]">
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(149,255,122,0.38),transparent_28rem),linear-gradient(180deg,#fbfff8,#edf4eb_54%,#f9fbf7)]" />
+      <main className="min-h-screen overflow-hidden bg-[#F3F0FF] text-[#21143A]">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_28%_0%,rgba(157,255,122,0.28),transparent_27rem),radial-gradient(circle_at_75%_12%,rgba(131,110,249,0.34),transparent_30rem),linear-gradient(180deg,#FCFBFF,#EEE9FF_54%,#F9F7FF)]" />
         <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center px-6 py-10">
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full overflow-hidden rounded-[3rem] border border-[#dfe9dc] bg-white/78 p-5 shadow-[0_42px_150px_rgba(16,21,16,0.14)] backdrop-blur-3xl sm:p-8"
+            className="w-full overflow-hidden rounded-[3rem] border border-[#DDD4F4] bg-white/78 p-5 shadow-[0_42px_150px_rgba(52,35,92,0.18)] backdrop-blur-3xl sm:p-8"
           >
-            <div className="rounded-[2.45rem] border border-white/70 bg-[#0d150f] p-7 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:p-10 lg:p-12">
+            <div className="rounded-[2.45rem] border border-white/20 bg-[#171022] p-7 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] sm:p-10 lg:p-12">
               <div className="flex items-center gap-3">
-                <div className="flex size-13 items-center justify-center rounded-2xl bg-white text-[#101510]">
-                  <HeartPulse size={22} />
-                </div>
+                <BrandMark className="size-13" />
                 <div>
                   <p className="text-sm font-semibold tracking-[0.26em] text-white/82">HEALTH TRACE</p>
                   <p className="text-sm text-white/46">Wallet {formatWalletAddress(walletAddress)}</p>
@@ -3005,19 +3352,110 @@ export default function Web3HealthPage() {
     );
   }
 
+  if (!isDemoAccount && displayName.trim() && !chogGuardian) {
+    return (
+      <main className="min-h-screen bg-[#F0ECFF] px-4 py-6 text-[#21143A] sm:px-6 sm:py-10">
+        <section className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-6xl overflow-hidden rounded-[2rem] border border-[#D9D0F1] bg-[#171022] shadow-[0_42px_150px_rgba(52,35,92,0.24)] lg:grid-cols-[0.9fr_1.1fr] lg:rounded-[3rem]">
+          <div className="relative min-h-[22rem] overflow-hidden lg:min-h-full">
+            <Image
+              src={chogGuardianImage}
+              alt="Chog holding a collectible card"
+              fill
+              priority
+              sizes="(max-width: 1024px) 100vw, 46vw"
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#171022] via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:to-[#171022]/42" />
+            <div className="absolute bottom-5 left-5 rounded-full border border-white/18 bg-[#21143A]/78 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white backdrop-blur-xl">
+              Chog Genesis · Monad
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-between p-6 text-white sm:p-10 lg:p-12">
+            <div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <BrandMark className="size-11" />
+                  <div>
+                    <p className="text-sm font-semibold tracking-[0.2em]">CHOG GUARDIAN</p>
+                    <p className="text-xs text-white/42">Wallet {formatWalletAddress(walletAddress)}</p>
+                  </div>
+                </div>
+                <span className="rounded-full border border-white/12 px-3 py-1 text-xs text-white/48">Step 2 of 2</span>
+              </div>
+
+              <p className="mt-12 text-xs font-semibold uppercase tracking-[0.24em] text-trace-green/74">Activate your guardian</p>
+              <h1 className="mt-4 max-w-2xl text-[clamp(3.1rem,6.4vw,6.4rem)] font-medium leading-[0.86] tracking-normal">
+                Give your Chog a reason to care.
+              </h1>
+              <p className="mt-6 max-w-xl text-base leading-7 text-white/58 sm:text-lg sm:leading-8">
+                Your Chog becomes the identity behind Care XP, evolving traits, and weekly recovery proofs. Raw health signals never enter the NFT.
+              </p>
+
+              <div className="mt-8 grid gap-2 sm:grid-cols-3">
+                {[
+                  [LockKeyhole, "Private signals", "Only action proofs leave Trace"],
+                  [Zap, "Care XP", "Healthy actions evolve your Chog"],
+                  [BadgeCheck, "Weekly proof", "Claim a wallet-signed recovery record"],
+                ].map(([Icon, label, detail]) => {
+                  const BenefitIcon = Icon as typeof LockKeyhole;
+                  return (
+                    <div key={String(label)} className="border-t border-white/12 pt-4">
+                      <BenefitIcon size={17} className="text-trace-green" />
+                      <p className="mt-3 text-sm font-medium">{String(label)}</p>
+                      <p className="mt-1 text-xs leading-5 text-white/42">{String(detail)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-10">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  onClick={discoverChogGuardian}
+                  disabled={isDiscoveringChog}
+                  className="h-14 rounded-full bg-trace-green px-6 font-semibold text-[#071006] hover:bg-[#adff91]"
+                >
+                  {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
+                  {isDiscoveringChog ? "Scanning Monad..." : "Detect my Chog NFT"}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={activatePreviewGuardian}
+                  className="h-14 rounded-full border border-white/18 bg-white/[0.07] px-6 font-semibold text-white hover:bg-white/[0.12]"
+                >
+                  Preview guardian
+                  <ArrowRight className="ml-2 size-4" />
+                </Button>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-white/38">
+                NFT detection verifies the Chog Genesis collection on Monad. Preview mode is available for judges and wallets without a Chog.
+              </p>
+              {chogActivationError ? (
+                <p className="mt-4 rounded-2xl border border-rose-300/18 bg-rose-300/10 px-4 py-3 text-sm leading-6 text-rose-100">
+                  {chogActivationError}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-[#f6f8f4] text-[#101510]">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_48%_-14%,rgba(157,255,122,0.28),transparent_38rem),radial-gradient(circle_at_100%_18%,rgba(148,203,255,0.12),transparent_30rem),linear-gradient(180deg,#f8faf6,#eef3ed_48%,#f8faf7)]" />
+    <main className="min-h-screen bg-[#F7F5FC] text-[#21143A]">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_36%_-14%,rgba(157,255,122,0.22),transparent_34rem),radial-gradient(circle_at_96%_14%,rgba(131,110,249,0.3),transparent_34rem),linear-gradient(180deg,#FBFAFF,#F0ECFA_48%,#FAF9FD)]" />
 
       <div className="relative z-10 mx-auto flex w-full max-w-[1520px] gap-4 px-3 py-3 sm:px-5 sm:py-5 lg:gap-6 lg:px-6 lg:py-6">
-        <aside className="sticky top-6 hidden h-[calc(100vh-3rem)] w-72 shrink-0 flex-col rounded-[2rem] border border-[#dfe7dc] bg-white/72 p-5 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl lg:flex">
+        <aside className="sticky top-6 hidden h-[calc(100vh-3rem)] w-72 shrink-0 flex-col rounded-[2rem] border border-[#DED6EE] bg-white/76 p-5 shadow-[0_28px_90px_rgba(52,35,92,0.1)] backdrop-blur-2xl lg:flex">
           <div className="flex items-center gap-3 px-2 py-2">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-[#101510] text-trace-green shadow-[0_18px_60px_rgba(16,21,16,0.18)]">
-              <HeartPulse size={21} />
-            </div>
+            <BrandMark className="size-12" />
             <div>
-              <p className="text-sm font-semibold tracking-[0.2em] text-[#526152]">HEALTH TRACE</p>
-              <p className="text-sm text-[#7b877b]">Web3 health guardian</p>
+              <p className="text-sm font-semibold tracking-[0.2em] text-[#53476B]">HEALTH TRACE</p>
+              <p className="text-sm font-medium text-[#7555DA]">Chog Guardian</p>
             </div>
           </div>
 
@@ -3032,42 +3470,40 @@ export default function Web3HealthPage() {
                   onClick={() => setActiveTab(item.label)}
                   className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
                     isActive
-                      ? "bg-[#101510] text-white shadow-[0_16px_44px_rgba(16,21,16,0.18)]"
-                      : "text-[#657265] hover:bg-[#f1f6ee] hover:text-[#172117]"
+                      ? "bg-[#21143A] text-white shadow-[0_16px_44px_rgba(52,35,92,0.22)]"
+                      : "text-[#716982] hover:bg-[#F0ECFF] hover:text-[#302345]"
                   }`}
                 >
-                  <Icon className={`size-4 ${isActive ? "text-trace-green" : "text-[#8a978a]"}`} />
+                  <Icon className={`size-4 ${isActive ? "text-trace-green" : "text-[#9285AF]"}`} />
                   {item.label}
                 </button>
               );
             })}
           </nav>
 
-          <div className="mt-5 rounded-full border border-[#d9e1d7] bg-white/70 px-4 py-2 text-center text-sm text-[#526152] shadow-[0_18px_60px_rgba(16,21,16,0.06)]">
+          <div className="mt-5 rounded-full border border-[#DED6EE] bg-white/74 px-4 py-2 text-center text-sm text-[#65587A] shadow-[0_18px_60px_rgba(52,35,92,0.07)]">
             {syncedAt ? `Synced at ${syncedAt}` : "Synced"}
           </div>
 
-          <div className="mt-auto rounded-[1.5rem] border border-[#dfe7dc] bg-[#f8fbf6] p-5">
-            <div className="mb-4 flex size-10 items-center justify-center rounded-2xl bg-[#e9f9e4] text-[#2f7d3c]">
+          <div className="mt-auto rounded-[1.5rem] border border-[#DED6EE] bg-[#F7F4FF] p-5">
+            <div className="mb-4 flex size-10 items-center justify-center rounded-2xl bg-[#EAE4FF] text-[#7555DA]">
               <ShieldCheck size={18} />
             </div>
-            <p className="text-sm font-medium text-[#172117]">Private by default</p>
-            <p className="mt-2 text-sm leading-6 text-[#6d786d]">
+            <p className="text-sm font-medium text-[#2B1F3E]">Private by default</p>
+            <p className="mt-2 text-sm leading-6 text-[#817793]">
               Raw health data stays private. Only completed healthy actions can become proofs.
             </p>
           </div>
         </aside>
 
         <section className="min-w-0 flex-1">
-          <Reveal className="mb-3 rounded-[1.5rem] border border-[#dfe7dc] bg-white/80 p-3 shadow-[0_18px_55px_rgba(16,21,16,0.06)] backdrop-blur-2xl lg:hidden">
+          <Reveal className="mb-3 rounded-[1.5rem] border border-[#DED6EE] bg-white/82 p-3 shadow-[0_18px_55px_rgba(52,35,92,0.08)] backdrop-blur-2xl lg:hidden">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-[#101510] text-trace-green">
-                  <HeartPulse size={18} />
-                </div>
+                <BrandMark className="size-10 shrink-0" />
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold tracking-[0.2em] text-[#526152]">HEALTH TRACE</p>
-                  <p className="truncate text-xs text-[#7b877b]">Web3 health guardian</p>
+                  <p className="truncate text-xs font-semibold tracking-[0.2em] text-[#53476B]">HEALTH TRACE</p>
+                  <p className="truncate text-xs font-medium text-[#7555DA]">Chog Guardian</p>
                 </div>
               </div>
               <span className="shrink-0 rounded-full border border-[#d9e1d7] bg-white/70 px-3 py-1 text-[0.68rem] text-[#526152]">
@@ -3077,7 +3513,7 @@ export default function Web3HealthPage() {
 
           </Reveal>
 
-          <div className="mb-4 overflow-hidden rounded-[1.5rem] border border-[#dfe7dc] bg-white/78 p-3 shadow-[0_18px_55px_rgba(16,21,16,0.05)] backdrop-blur-2xl lg:hidden">
+          <div className="mb-4 overflow-hidden rounded-[1.5rem] border border-[#DED6EE] bg-white/82 p-3 shadow-[0_18px_55px_rgba(52,35,92,0.07)] backdrop-blur-2xl lg:hidden">
             <div className="grid grid-cols-4 gap-2">
               {mobilePrimaryNavigation.map((item) => {
                 const Icon = item.icon;
@@ -3092,13 +3528,13 @@ export default function Web3HealthPage() {
                     }}
                     className={`group flex min-h-[4.45rem] flex-col items-center justify-center gap-1 rounded-[1.1rem] border px-1.5 py-2 text-center text-[0.66rem] font-medium leading-tight transition ${
                       isActive
-                        ? "border-[#101510] bg-[#101510] text-white shadow-[0_14px_34px_rgba(16,21,16,0.18)]"
-                        : "border-transparent bg-transparent text-[#657265] hover:bg-[#f1f6ee] hover:text-[#172117]"
+                        ? "border-[#21143A] bg-[#21143A] text-white shadow-[0_14px_34px_rgba(52,35,92,0.22)]"
+                        : "border-transparent bg-transparent text-[#716982] hover:bg-[#F0ECFF] hover:text-[#302345]"
                     }`}
                   >
                     <span
                       className={`flex size-8 items-center justify-center rounded-2xl transition ${
-                        isActive ? "bg-trace-green/16 text-trace-green" : "bg-[#eef5ec] text-[#3a8f4d]"
+                        isActive ? "bg-trace-green/16 text-trace-green" : "bg-[#F0ECFF] text-[#7555DA]"
                       }`}
                     >
                       <Icon className="size-4" />
@@ -3131,13 +3567,13 @@ export default function Web3HealthPage() {
                           }}
                           className={`group flex min-h-[4.45rem] flex-col items-center justify-center gap-1 rounded-[1.1rem] border px-1.5 py-2 text-center text-[0.66rem] font-medium leading-tight transition ${
                             isActive
-                              ? "border-[#101510] bg-[#101510] text-white shadow-[0_14px_34px_rgba(16,21,16,0.18)]"
-                              : "border-transparent bg-transparent text-[#657265] hover:bg-[#f1f6ee] hover:text-[#172117]"
+                              ? "border-[#21143A] bg-[#21143A] text-white shadow-[0_14px_34px_rgba(52,35,92,0.22)]"
+                              : "border-transparent bg-transparent text-[#716982] hover:bg-[#F0ECFF] hover:text-[#302345]"
                           }`}
                         >
                           <span
                             className={`flex size-8 items-center justify-center rounded-2xl transition ${
-                              isActive ? "bg-trace-green/16 text-trace-green" : "bg-[#eef5ec] text-[#3a8f4d]"
+                              isActive ? "bg-trace-green/16 text-trace-green" : "bg-[#F0ECFF] text-[#7555DA]"
                             }`}
                           >
                             <Icon className="size-4" />
@@ -3156,8 +3592,8 @@ export default function Web3HealthPage() {
               onClick={() => setMobileMoreOpen((open) => !open)}
               className={`mx-auto mt-2 flex items-center gap-2 rounded-full px-3 py-1.5 text-[0.68rem] font-medium transition ${
                 isMobileOverflowActive || mobileMoreOpen
-                  ? "bg-[#101510] text-white"
-                  : "bg-[#eef5ec] text-[#657265]"
+                  ? "bg-[#21143A] text-white"
+                  : "bg-[#F0ECFF] text-[#716982]"
               }`}
             >
               <span>{isMobileOverflowActive && !mobileMoreOpen ? activeTab : "More"}</span>
@@ -3201,6 +3637,11 @@ export default function Web3HealthPage() {
                     openJournalCheckIn={openJournalCheckIn}
                     rewardPoints={rewardPoints}
                     completedRewardMissions={completedRewardMissions}
+                    chogGuardian={chogGuardian}
+                    careXp={careXp}
+                    guardianLevel={guardianLevel}
+                    guardianLevelProgress={guardianLevelProgress}
+                    guardianTraits={guardianTraits}
                     currentDayRecord={currentDayRecord}
                     isDemoAccount={isDemoAccount}
                     proofActions={proofActions}
@@ -3209,6 +3650,10 @@ export default function Web3HealthPage() {
                     weeklyReportStats={weeklyReportStats}
                     weeklyReportSummary={weeklyReportSummary}
                     syncProofAction={syncProofAction}
+                    guardianWeeklyProofReady={guardianWeeklyProofReady}
+                    guardianWeeklyProofClaimed={guardianWeeklyProofClaimed}
+                    guardianClaimState={guardianClaimState}
+                    claimWeeklyGuardianProof={claimWeeklyGuardianProof}
                   />
                 </div>
               ) : null}
@@ -3217,7 +3662,7 @@ export default function Web3HealthPage() {
                 <>
                 <div className="space-y-4 lg:hidden">
                   <Reveal>
-                    <section className="relative overflow-hidden rounded-[2rem] bg-[#101510] p-5 text-white shadow-[0_28px_80px_rgba(16,21,16,0.28)]">
+                    <section className="relative overflow-hidden rounded-[2rem] bg-[#21143A] p-5 text-white shadow-[0_28px_80px_rgba(52,35,92,0.3)]">
                       <motion.div
                         aria-hidden
                         className="absolute -right-16 -top-16 size-48 rounded-full bg-[#9DFF7A]/24 blur-3xl"
@@ -3236,7 +3681,7 @@ export default function Web3HealthPage() {
                             </h1>
                           </div>
                           <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5 shadow-[0_18px_55px_rgba(157,255,122,0.18)]">
-                            <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510]">
+                            <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#21143A]">
                               <p className="text-2xl font-medium leading-none">{healthScore}</p>
                               <p className="mt-1 text-[0.58rem] text-trace-green">Score</p>
                             </div>
@@ -3261,6 +3706,31 @@ export default function Web3HealthPage() {
                     </section>
                   </Reveal>
 
+                  {chogGuardian ? (
+                    <Reveal delay={0.04}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("Rewards")}
+                        className="grid w-full grid-cols-[6.5rem_1fr] gap-4 overflow-hidden rounded-[1.75rem] bg-[#21143a] p-3 text-left text-white shadow-[0_22px_70px_rgba(33,20,58,0.22)]"
+                      >
+                        <GuardianArtwork className="aspect-square" />
+                        <div className="min-w-0 py-2 pr-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-semibold uppercase tracking-[0.18em] text-violet-200/72">
+                              {chogGuardian.label}
+                            </p>
+                            <span className="rounded-full bg-white/10 px-2 py-1 text-[0.6rem] text-white/56">Lv {guardianLevel}</span>
+                          </div>
+                          <p className={`mt-2 text-2xl font-medium ${guardianMood.tone}`}>{guardianMood.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-white/48">{careXp} Care XP · {guardianTraits.length} traits unlocked</p>
+                          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                            <div className="h-full rounded-full bg-trace-green" style={{ width: `${guardianLevelProgress}%` }} />
+                          </div>
+                        </div>
+                      </button>
+                    </Reveal>
+                  ) : null}
+
                   <Reveal delay={0.06}>
                     <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_22px_70px_rgba(16,21,16,0.08)] backdrop-blur-2xl">
                       <div className="mb-4 flex items-center justify-between">
@@ -3268,7 +3738,7 @@ export default function Web3HealthPage() {
                           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#607260]">
                             Live Signals
                           </p>
-                          <h2 className="mt-1 text-2xl font-medium leading-tight">Your Web3 body state</h2>
+                          <h2 className="mt-1 text-2xl font-medium leading-tight">Your Health Trace state</h2>
                         </div>
                         <span className="rounded-full bg-[#101510] px-3 py-1 text-xs font-medium text-trace-green">
                           Live
@@ -3352,28 +3822,28 @@ export default function Web3HealthPage() {
                 <div className="hidden gap-4 lg:grid lg:h-[calc(100vh-3rem)] lg:grid-rows-[auto_1fr] lg:gap-6">
                   <div className="grid gap-4 xl:grid-cols-[1.04fr_0.96fr] xl:gap-6">
                     <Reveal className="h-full">
-                      <div className="h-full rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.08)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-5">
+                      <div className="h-full rounded-[1.6rem] border border-[#DED6EE] bg-white/82 p-4 shadow-[0_28px_90px_rgba(52,35,92,0.1)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-5">
                         <div className="grid gap-4 sm:grid-cols-[1fr_8.5rem] lg:grid-cols-[1fr_9rem]">
                           <div>
-                            <div className="mb-3 flex items-center gap-2 text-[#5d6b5d]">
+                            <div className="mb-3 flex items-center gap-2 text-[#716982]">
                               <Sparkles size={16} />
                               <p className="text-sm font-medium">Good Morning, {profileName}</p>
                             </div>
-                            <h1 className="max-w-xl text-[clamp(2.15rem,11vw,3.45rem)] font-medium leading-[0.95] tracking-normal text-[#101510] sm:text-[clamp(2.05rem,3vw,3.45rem)]">
+                            <h1 className="max-w-xl text-[clamp(2.15rem,11vw,3.45rem)] font-medium leading-[0.95] tracking-normal text-[#21143A] sm:text-[clamp(2.05rem,3vw,3.45rem)]">
                               Here&apos;s your
                               <br />
-                              Web3 health
+                              Health Trace
                               <br />
                               summary
                             </h1>
                           </div>
                           <div className="grid grid-cols-2 gap-2 sm:mt-8 sm:block sm:space-y-2">
-                            <div className="rounded-[1.35rem] border border-[#dfe7dc] bg-[#101510] p-3 text-center text-white">
+                            <div className="rounded-[1.35rem] border border-[#836EF9]/35 bg-[#21143A] p-3 text-center text-white shadow-[0_18px_48px_rgba(52,35,92,0.2)]">
                               <p className="mb-2 text-center text-[0.5rem] font-semibold uppercase tracking-[0.18em] text-white/38">
-                                Web3 Health Score
+                                Health Trace Score
                               </p>
-                              <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5">
-                                <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#101510]">
+                              <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-[conic-gradient(#9DFF7A_0deg,#9DFF7A_235deg,#836EF9_310deg,rgba(255,255,255,0.13)_310deg)] p-1.5">
+                                <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#21143A]">
                                   <p className="text-2xl font-medium leading-none">{healthScore}</p>
                                   <p className="mt-1 text-[0.62rem] text-trace-green">{healthScoreLabel}</p>
                                 </div>
@@ -3416,10 +3886,10 @@ export default function Web3HealthPage() {
                               <Line
                                 type="monotone"
                                 dataKey="score"
-                                stroke="#3a8f4d"
+                                stroke="#836EF9"
                                 strokeWidth={3}
-                                dot={{ r: 3, strokeWidth: 0, fill: "#3a8f4d" }}
-                                activeDot={{ r: 5, strokeWidth: 0, fill: "#3a8f4d" }}
+                                dot={{ r: 3, strokeWidth: 0, fill: "#836EF9" }}
+                                activeDot={{ r: 5, strokeWidth: 0, fill: "#836EF9" }}
                               />
                               <Line
                                 type="monotone"
@@ -3444,9 +3914,24 @@ export default function Web3HealthPage() {
                     </Reveal>
 
                     <Reveal delay={0.08} className="h-full">
-                      <section className="h-full rounded-[1.6rem] border border-[#dfe7dc] bg-white/78 p-4 shadow-[0_28px_90px_rgba(16,21,16,0.07)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-5">
+                      <section className="h-full rounded-[1.6rem] border border-[#DED6EE] bg-white/82 p-4 shadow-[0_28px_90px_rgba(52,35,92,0.09)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-5">
+                        {chogGuardian ? (
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab("Rewards")}
+                            className="mb-3 grid w-full grid-cols-[5rem_1fr_auto] items-center gap-3 overflow-hidden rounded-[1.2rem] bg-[#21143a] p-2.5 text-left text-white shadow-[0_14px_40px_rgba(33,20,58,0.16)]"
+                          >
+                            <GuardianArtwork className="aspect-square" />
+                            <div className="min-w-0">
+                              <p className="truncate text-[0.62rem] font-semibold uppercase tracking-[0.17em] text-violet-200/68">{chogGuardian.label}</p>
+                              <p className={`mt-1 text-lg font-medium ${guardianMood.tone}`}>{guardianMood.label}</p>
+                              <p className="mt-1 text-[0.68rem] text-white/42">{careXp} Care XP · {guardianTraits.length} traits</p>
+                            </div>
+                            <div className="rounded-full border border-white/12 bg-white/[0.07] px-3 py-1 text-xs text-trace-green">Lv {guardianLevel}</div>
+                          </button>
+                        ) : null}
                         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-[#607260]">
-                          Today&apos;s Web3 Health Brief
+                          Today&apos;s Health Trace Brief
                         </p>
                         <div className="space-y-2.5">
                           {dashboardBriefItems.map((item) => (
@@ -3478,7 +3963,7 @@ export default function Web3HealthPage() {
                         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#607260]">
                           Live Signals
                         </p>
-                        <h2 className="mt-1 text-2xl font-medium">Health context for Web3 behavior</h2>
+                        <h2 className="mt-1 text-2xl font-medium">Health signals for onchain behavior</h2>
                       </div>
                       <div className="grid flex-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
                         {dashboardSignals.map((signal) => (
@@ -3508,7 +3993,7 @@ export default function Web3HealthPage() {
                       <div className="relative grid gap-8 xl:grid-cols-[1fr_20rem]">
                         <div>
                           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#4b7d4d]">
-                            AI Web3 Health Guardian
+                            CHOG GUARDIAN
                           </p>
                           <h2 className="mt-4 text-[clamp(2.05rem,10vw,4.9rem)] font-medium leading-[0.95] tracking-normal text-[#101510] sm:text-[clamp(2.3rem,4vw,4.9rem)]">
                             {guardianTitle}
@@ -3529,17 +4014,23 @@ export default function Web3HealthPage() {
                           </div>
                         </div>
                         <div className="rounded-[1.5rem] border border-[#dce6d9] bg-[#101510] p-5 text-white shadow-[0_24px_70px_rgba(16,21,16,0.2)]">
-                          <p className="text-sm text-white/46">Guardian readout</p>
-                          <div className="mt-4 flex items-end justify-between">
+                          <div className="flex items-start gap-4">
+                            <GuardianArtwork className="size-24 shrink-0" />
                             <div>
-                              <p className="text-4xl font-medium">{guardianReadout.value}</p>
-                              <p className="mt-1 text-sm text-trace-green">{guardianReadout.label}</p>
-                            </div>
-                            <div className="flex size-12 items-center justify-center rounded-full border border-trace-green/24 bg-trace-green/10 text-trace-green">
-                              <BrainCircuit size={19} />
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/64">{chogGuardian?.label}</p>
+                              <p className={`mt-2 text-2xl font-medium ${guardianMood.tone}`}>{guardianMood.label}</p>
+                              <p className="mt-1 text-xs leading-5 text-white/42">Your Chog translates private context into today&apos;s protocol.</p>
                             </div>
                           </div>
-                          <div className="mt-5 h-16">
+                          <div className="mt-5 flex items-end justify-between border-t border-white/10 pt-4">
+                            <div>
+                              <p className="text-xs text-white/42">Guardian readout</p>
+                              <p className="mt-1 text-3xl font-medium">{guardianReadout.value}</p>
+                              <p className="mt-1 text-xs text-trace-green">{guardianReadout.label}</p>
+                            </div>
+                            <div className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs text-white/62">Lv {guardianLevel}</div>
+                          </div>
+                          <div className="mt-3 h-12">
                             <MiniChart data={guardianReadout.chart} />
                           </div>
                         </div>
@@ -4041,15 +4532,53 @@ export default function Web3HealthPage() {
                           ))}
                         </div>
                       </div>
-                      <div className="rounded-[1.65rem] border border-[#dce6d9] bg-[#f8fbf6] p-6">
-                        <p className="text-sm font-medium text-[#172117]">Share without exposing raw health data</p>
-                        <p className="mt-3 text-sm leading-6 text-[#687668]">
-                          The poster shows completed actions, streaks, and high-level progress. It does
-                          not reveal sleep records, heart rate values, or stress data.
-                        </p>
-                        <Button className="mt-6 rounded-full bg-[#101510] text-white hover:bg-[#253525]">
-                          Prepare weekly poster
-                        </Button>
+                      <div className="grid gap-5 rounded-[1.65rem] border border-[#dce6d9] bg-[#f8fbf6] p-5 sm:grid-cols-[8rem_1fr] sm:p-6">
+                        <GuardianArtwork className="aspect-square self-start shadow-[0_18px_44px_rgba(33,20,58,0.16)]" />
+                        <div>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-[#172117]">Weekly Chog Recovery Proof</p>
+                            <span className={`rounded-full px-3 py-1 text-xs font-medium ${guardianWeeklyProofClaimed ? "bg-[#101510] text-trace-green" : guardianWeeklyProofReady ? "bg-[#e4f7dd] text-[#2f7d3c]" : "bg-[#edf1eb] text-[#687668]"}`}>
+                              {guardianWeeklyProofClaimed ? "Claimed" : guardianWeeklyProofReady ? "Ready" : `${Math.min(3, completedProofCount)}/3 actions`}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-[#687668]">
+                            Claim a high-level action summary for {chogGuardian?.label}. Sleep, heart rate, stress values, and journal text remain private.
+                          </p>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              onClick={claimWeeklyGuardianProof}
+                              disabled={!guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
+                              className="rounded-full bg-[#101510] text-white hover:bg-[#253525] disabled:bg-[#dfe7dc] disabled:text-[#657365]"
+                            >
+                              {guardianClaimState === "preparing" || guardianClaimState === "wallet" ? (
+                                <RefreshCw className="mr-2 size-4 animate-spin" />
+                              ) : guardianWeeklyProofClaimed ? (
+                                <Check className="mr-2 size-4" />
+                              ) : (
+                                <ShieldCheck className="mr-2 size-4" />
+                              )}
+                              {guardianClaimState === "preparing"
+                                ? "Preparing proof..."
+                                : guardianClaimState === "wallet"
+                                  ? "Confirm in wallet..."
+                                  : guardianWeeklyProofClaimed
+                                    ? "Weekly proof claimed"
+                                    : traceChogGuardianContractAddress && chogGuardian?.mode === "wallet"
+                                      ? "Claim on Monad"
+                                      : "Sign weekly proof"}
+                            </Button>
+                            <Button className="rounded-full border border-[#dce6d9] bg-white text-[#172117] hover:bg-[#eef5ec]">
+                              Prepare poster
+                            </Button>
+                          </div>
+                          {guardianProofTxHash ? (
+                            <p className="mt-3 break-all text-[0.68rem] text-[#657365]">Proof reference: {guardianProofTxHash}</p>
+                          ) : null}
+                          {chogActivationError ? (
+                            <p className="mt-3 text-xs leading-5 text-rose-600">{chogActivationError}</p>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
@@ -4122,6 +4651,35 @@ export default function Web3HealthPage() {
                             ) : null}
                           </div>
                         ))}
+                      </div>
+                      {chogGuardian ? (
+                        <div className="mt-4 grid grid-cols-[6.25rem_1fr] gap-4 rounded-[1.35rem] border border-violet-200/15 bg-[#21143a] p-3">
+                          <GuardianArtwork className="aspect-square" />
+                          <div className="min-w-0 py-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/72">{chogGuardian.label}</p>
+                              <span className="text-xs text-trace-green">{careXp} XP</span>
+                            </div>
+                            <p className={`mt-2 text-xl font-medium ${guardianMood.tone}`}>{guardianMood.label}</p>
+                            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                              <div className="h-full rounded-full bg-trace-green" style={{ width: `${guardianLevelProgress}%` }} />
+                            </div>
+                            <p className="mt-2 text-[0.68rem] text-white/42">
+                              {guardianLevel >= 6 ? "Maximum guardian level" : `${100 - guardianLevelProgress} XP to level ${guardianLevel + 1}`}
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {guardianTraits.length ? (
+                          guardianTraits.map((trait) => (
+                            <span key={trait} className="rounded-full border border-white/12 bg-white/[0.06] px-3 py-1 text-[0.68rem] text-white/62">
+                              {trait}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-white/38">Complete healthy actions to unlock your first Chog trait.</span>
+                        )}
                       </div>
                       <h2 className="mt-7 text-[clamp(2rem,3.1vw,3.85rem)] font-medium leading-[0.95]">
                         Rewards for recovery, not speculation.
@@ -4213,7 +4771,7 @@ export default function Web3HealthPage() {
                         Ask what your body and behavior are saying.
                       </h2>
                       <p className="mt-5 text-base leading-7 text-[#667466]">
-                        The chat explains Web3 stress, recovery, and healthy action proofs in plain
+                        The chat explains onchain stress, recovery, and healthy action proofs in plain
                         English. It is a companion layer, not a medical diagnosis.
                       </p>
                       <div className="mt-6 flex flex-wrap gap-2">
@@ -4301,6 +4859,26 @@ export default function Web3HealthPage() {
                                   Save
                                 </Button>
                               </div>
+                            </div>
+                          ) : null}
+                          {chogGuardian ? (
+                            <div className="flex items-center gap-3 border-y border-[#e1e9df] py-3">
+                              <GuardianArtwork className="size-14 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-[#607260]">Active Chog guardian</p>
+                                <p className="mt-1 truncate text-sm font-medium text-[#172117]">{chogGuardian.label} · Level {guardianLevel}</p>
+                                <p className="mt-1 text-xs text-[#7a867a]">{chogGuardian.mode === "wallet" ? "Ownership verified" : "Hackathon preview mode"}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setChogGuardian(null);
+                                  setChogActivationError("");
+                                }}
+                                className="rounded-full border border-[#dfe7dc] px-3 py-2 text-xs font-medium text-[#526152] transition hover:border-[#101510] hover:text-[#101510]"
+                              >
+                                Change
+                              </button>
                             </div>
                           ) : null}
                           <Button
