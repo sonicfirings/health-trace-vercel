@@ -1773,7 +1773,9 @@ function MobileTabScreen({
               <div className="min-w-0 py-1">
                 <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/68">{chogGuardian.label}</p>
                 <p className={`mt-2 text-xl font-medium ${mobileChogMood.tone}`}>{mobileChogMood.label}</p>
-                <p className="mt-1 text-xs text-white/46">{careXp} Care XP · {guardianTraits.length} traits</p>
+                <p className="mt-1 text-xs text-white/46">
+                  {careXp} Care XP · {chogGuardian.mode === "wallet" ? "3× NFT boost" : "1× preview"}
+                </p>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-trace-green" style={{ width: `${guardianLevelProgress}%` }} />
                 </div>
@@ -1909,17 +1911,23 @@ function MobileTabScreen({
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-violet-200/70">Weekly Chog proof</p>
                 <span className="text-[0.65rem] text-trace-green">
-                  {guardianWeeklyProofClaimed ? "Claimed" : guardianWeeklyProofReady ? "Ready" : "Locked"}
+                  {chogGuardian.mode !== "wallet" ? "NFT required" : guardianWeeklyProofClaimed ? "Claimed" : guardianWeeklyProofReady ? "Ready" : "Locked"}
                 </span>
               </div>
               <p className="mt-2 text-xs leading-5 text-white/46">Claim the action summary without publishing raw health signals.</p>
               <Button
                 type="button"
                 onClick={claimWeeklyGuardianProof}
-                disabled={!guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
+                disabled={chogGuardian.mode !== "wallet" || !guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
                 className="mt-3 h-9 w-full rounded-full bg-trace-green text-xs font-semibold text-[#130B20] hover:bg-[#FF9DCA] disabled:bg-white/10 disabled:text-white/32"
               >
-                {guardianClaimState ? "Confirm in wallet..." : guardianWeeklyProofClaimed ? "Proof claimed" : "Claim weekly proof"}
+                {chogGuardian.mode !== "wallet"
+                  ? "CHOG NFT required"
+                  : guardianClaimState
+                    ? "Confirm in wallet..."
+                    : guardianWeeklyProofClaimed
+                      ? "Proof claimed"
+                      : "Claim weekly proof"}
               </Button>
             </div>
           </section>
@@ -2185,6 +2193,8 @@ export default function Web3HealthPage() {
       : createDailyRecord(todayKey)
     : null;
   const guardianLevel = Math.min(6, Math.max(1, Math.floor(careXp / 100) + 1));
+  const hasVerifiedChog = chogGuardian?.mode === "wallet";
+  const careXpMultiplier = hasVerifiedChog ? 3 : 1;
   const guardianLevelFloor = (guardianLevel - 1) * 100;
   const guardianLevelProgress = guardianLevel >= 6 ? 100 : Math.min(100, careXp - guardianLevelFloor);
   const guardianMood = getGuardianMood(currentDayRecord);
@@ -2194,11 +2204,11 @@ export default function Web3HealthPage() {
       ...(guardianLevel >= 2 ? ["Focus antenna"] : []),
       ...(guardianLevel >= 3 ? ["Recovery aura"] : []),
       ...(guardianLevel >= 4 ? ["Calm trader"] : []),
-      ...(guardianLevel >= 6 ? ["Builder balance"] : []),
+      ...(guardianLevel >= 6 && hasVerifiedChog ? ["Builder balance"] : []),
     ]),
   );
   const guardianProofWeek = getGmt8WeekKey();
-  const guardianWeeklyProofReady = Boolean(chogGuardian && completedProofCount >= 3);
+  const guardianWeeklyProofReady = Boolean(hasVerifiedChog && completedProofCount >= 3);
   const guardianWeeklyProofClaimed = lastGuardianProofWeek === guardianProofWeek;
   const firstSavedRecordDate = Object.keys(dailyRecords).sort()[0] ?? "";
   const chartConnectedDate = isDemoAccount
@@ -2295,12 +2305,12 @@ export default function Web3HealthPage() {
     ["HT Points", rewardPoints.toLocaleString()],
     ["Level", String(guardianLevel)],
     ["Streak", proofStreakLabel],
-    ["Badge status", guardianLevel >= 6 ? "Mint ready" : "Not ready"],
+    ["Badge status", !hasVerifiedChog ? "NFT required" : guardianLevel >= 6 ? "Mint ready" : "Not ready"],
   ];
   const dashboardBadges = healthBadges.map((badge) => {
     if (!hasLiveHealthContext) return { ...badge, status: "NOT READY" };
     if (badge.label === "Builder Balance") {
-      return { ...badge, status: guardianLevel >= 6 ? "Mint ready" : "Not ready" };
+      return { ...badge, status: !hasVerifiedChog ? "NFT required" : guardianLevel >= 6 ? "Mint ready" : "Not ready" };
     }
     if (badge.label === "Calm Trader") {
       return { ...badge, status: `${Math.min(100, Math.max(0, Math.round((careXp / 500) * 100)))}%` };
@@ -3101,7 +3111,7 @@ export default function Web3HealthPage() {
       setRewardPoints((pointsCurrent) => pointsCurrent + points);
       const missionCareXp = careXpByMission[mission] ?? 0;
       if (missionCareXp > 0) {
-        setCareXp((currentXp) => currentXp + missionCareXp);
+        setCareXp((currentXp) => currentXp + missionCareXp * careXpMultiplier);
       }
       updateTodayRecord((record) => ({
         ...record,
@@ -3327,7 +3337,12 @@ export default function Web3HealthPage() {
   };
 
   const claimWeeklyGuardianProof = async () => {
-    if (!chogGuardian || !guardianWeeklyProofReady || guardianWeeklyProofClaimed || !window.ethereum) return;
+    if (!chogGuardian || guardianWeeklyProofClaimed || !window.ethereum) return;
+    if (!hasVerifiedChog) {
+      setChogActivationError("CHOG NFT required for on-chain weekly proofs.");
+      return;
+    }
+    if (!guardianWeeklyProofReady) return;
 
     setChogActivationError("");
     setGuardianClaimState("preparing");
@@ -3621,7 +3636,7 @@ export default function Web3HealthPage() {
               <div className="mt-8 grid gap-2 sm:grid-cols-3">
                 {[
                   [LockKeyhole, "Private signals", "Only action proofs leave Trace"],
-                  [Zap, "Care XP", "Healthy actions evolve your Chog"],
+                  [Zap, "3× Care XP", "Verified Chogs level up three times faster"],
                   [BadgeCheck, "Weekly proof", "Claim a wallet-signed recovery record"],
                 ].map(([Icon, label, detail]) => {
                   const BenefitIcon = Icon as typeof LockKeyhole;
@@ -3657,7 +3672,7 @@ export default function Web3HealthPage() {
                 </Button>
               </div>
               <p className="mt-3 text-xs leading-5 text-white/38">
-                NFT detection verifies the Chog Genesis collection on Monad. Preview mode is available for judges and wallets without a Chog.
+                Preview mode includes the health dashboard and standard XP. Verified CHOG holders unlock 3× Care XP, on-chain weekly proofs, and badge mint eligibility.
               </p>
               <div className="mt-4">
                 <ChogTokenPicker tokens={ownedChogTokens} onSelect={selectOwnedChogGuardian} dark />
@@ -3956,7 +3971,9 @@ export default function Web3HealthPage() {
                             <span className="rounded-full bg-white/10 px-2 py-1 text-[0.6rem] text-white/56">Lv {guardianLevel}</span>
                           </div>
                           <p className={`mt-2 text-2xl font-medium ${guardianMood.tone}`}>{guardianMood.label}</p>
-                          <p className="mt-1 text-xs leading-5 text-white/48">{careXp} Care XP · {guardianTraits.length} traits unlocked</p>
+                          <p className="mt-1 text-xs leading-5 text-white/48">
+                            {careXp} Care XP · {careXpMultiplier}× earning · {guardianTraits.length} traits
+                          </p>
                           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
                             <div className="h-full rounded-full bg-trace-green" style={{ width: `${guardianLevelProgress}%` }} />
                           </div>
@@ -4772,7 +4789,7 @@ export default function Web3HealthPage() {
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-sm font-medium text-[#21182C]">Weekly Chog Recovery Proof</p>
                             <span className={`rounded-full px-3 py-1 text-xs font-medium ${guardianWeeklyProofClaimed ? "bg-[#171022] text-trace-green" : guardianWeeklyProofReady ? "bg-[#F2EAFF] text-[#7555DA]" : "bg-[#F0EBF7] text-[#746A80]"}`}>
-                              {guardianWeeklyProofClaimed ? "Claimed" : guardianWeeklyProofReady ? "Ready" : `${Math.min(3, completedProofCount)}/3 actions`}
+                              {!hasVerifiedChog ? "NFT required" : guardianWeeklyProofClaimed ? "Claimed" : guardianWeeklyProofReady ? "Ready" : `${Math.min(3, completedProofCount)}/3 actions`}
                             </span>
                           </div>
                           <p className="mt-3 text-sm leading-6 text-[#746A80]">
@@ -4782,7 +4799,7 @@ export default function Web3HealthPage() {
                             <Button
                               type="button"
                               onClick={claimWeeklyGuardianProof}
-                              disabled={!guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
+                              disabled={!hasVerifiedChog || !guardianWeeklyProofReady || guardianWeeklyProofClaimed || Boolean(guardianClaimState)}
                               className="rounded-full bg-[#171022] text-white hover:bg-[#302345] disabled:bg-[#E5DFF2] disabled:text-[#756A82]"
                             >
                               {guardianClaimState === "preparing" || guardianClaimState === "wallet" ? (
@@ -4792,7 +4809,9 @@ export default function Web3HealthPage() {
                               ) : (
                                 <ShieldCheck className="mr-2 size-4" />
                               )}
-                              {guardianClaimState === "preparing"
+                              {!hasVerifiedChog
+                                ? "CHOG NFT required"
+                                : guardianClaimState === "preparing"
                                 ? "Preparing proof..."
                                 : guardianClaimState === "wallet"
                                   ? "Confirm in wallet..."
@@ -4880,7 +4899,7 @@ export default function Web3HealthPage() {
                             </div>
                             {label === "Badge status" && badgeHintOpen === "stats" ? (
                               <p className="mt-3 rounded-xl border border-trace-green/20 bg-trace-green/10 px-3 py-2 text-xs leading-5 text-trace-green">
-                                Reach level 6 to mint badge.
+                                {hasVerifiedChog ? "Reach level 6 to mint badge." : "Verified CHOG NFT required to mint badge."}
                               </p>
                             ) : null}
                           </div>
@@ -4892,7 +4911,7 @@ export default function Web3HealthPage() {
                           <div className="min-w-0 py-1">
                             <div className="flex items-center justify-between gap-2">
                               <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/72">{chogGuardian.label}</p>
-                              <span className="text-xs text-trace-green">{careXp} XP</span>
+                              <span className="text-xs text-trace-green">{careXp} XP · {careXpMultiplier}×</span>
                             </div>
                             <p className={`mt-2 text-xl font-medium ${guardianMood.tone}`}>{guardianMood.label}</p>
                             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
@@ -4983,7 +5002,7 @@ export default function Web3HealthPage() {
                             </div>
                             {badge.label === "Builder Balance" && badgeHintOpen === "builder" ? (
                               <p className="mt-3 rounded-xl border border-[#E1DAEF] bg-white px-3 py-2 text-xs leading-5 text-[#7555DA]">
-                                Reach level 6 to mint badge.
+                                  {hasVerifiedChog ? "Reach level 6 to mint badge." : "Verified CHOG NFT required to mint badge."}
                               </p>
                             ) : null}
                           </div>
