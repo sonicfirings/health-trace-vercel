@@ -278,12 +278,6 @@ const careXpByMission: Record<string, number> = {
   "Keep midnight boundary": 35,
 };
 
-const getPreviewChogTokenId = (wallet: string) => {
-  const tail = wallet.replace(/^0x/, "").slice(-6);
-  const numeric = Number.parseInt(tail || "1", 16);
-  return String((Number.isFinite(numeric) ? numeric : 0) % 1969 + 1);
-};
-
 const resolveChogAssetUrl = (uri: string) => {
   if (!uri.startsWith("ipfs://")) return uri;
   return `https://gateway.pinata.cloud/ipfs/${uri.slice("ipfs://".length)}`;
@@ -1996,21 +1990,25 @@ function MobileTabScreen({
               </button>
             </div>
             <p className="mt-2 truncate text-lg font-medium">{chogGuardian.label}</p>
-            <p className="mt-1 text-xs text-white/42">Level {guardianLevel} · {chogGuardian.mode === "wallet" ? "Ownership verified" : "Preview mode"}</p>
+            <p className="mt-1 text-xs text-white/42">Level {guardianLevel} · Ownership verified</p>
           </div>
         </section>
       ) : null}
       <ChogTokenPicker tokens={ownedChogTokens} onSelect={selectOwnedChogGuardian} />
       {!chogGuardian && !ownedChogTokens.length ? (
-        <Button
-          type="button"
-          onClick={discoverChogGuardian}
-          disabled={isDiscoveringChog}
-          className="h-11 w-full rounded-full bg-[#21143A] text-white hover:bg-[#33204F]"
-        >
-          {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
-          {isDiscoveringChog ? "Scanning Monad..." : "Detect wallet Chogs"}
-        </Button>
+        <section className="rounded-[1.5rem] border border-[#E1DAEF] bg-[#FAF7FF] p-4">
+          <p className="text-sm font-medium text-[#21182C]">No NFT detected</p>
+          <p className="mt-1 text-xs leading-5 text-[#746A80]">Scan again after buying or receiving a CHOG NFT.</p>
+          <Button
+            type="button"
+            onClick={discoverChogGuardian}
+            disabled={isDiscoveringChog}
+            className="mt-3 h-11 w-full rounded-full bg-[#21143A] text-white hover:bg-[#33204F]"
+          >
+            {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
+            {isDiscoveringChog ? "Scanning Monad..." : "Detect CHOG NFT"}
+          </Button>
+        </section>
       ) : null}
       {chogActivationError ? <p className="text-xs leading-5 text-[#7555DA]">{chogActivationError}</p> : null}
       <section className="rounded-[1.75rem] border border-[#E5DFF2] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
@@ -2793,7 +2791,8 @@ export default function Web3HealthPage() {
         setDisplayName(profile.displayName ?? "");
         setPendingDisplayName(profile.displayName ?? "");
         setWalletResetAt(profile.resetAt ?? backendResetAt ?? "");
-        setChogGuardian(profile.chogGuardian ?? backendProfile?.guardianData?.guardian ?? null);
+        const restoredGuardian = profile.chogGuardian ?? backendProfile?.guardianData?.guardian ?? null;
+        setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
         setCareXp(profile.careXp ?? backendProfile?.guardianData?.careXp ?? 0);
         setChogTraits(profile.chogTraits ?? backendProfile?.guardianData?.traits ?? []);
         setLastGuardianProofWeek(profile.lastGuardianProofWeek ?? backendProfile?.guardianData?.lastProofWeek ?? "");
@@ -2866,7 +2865,8 @@ export default function Web3HealthPage() {
         setPendingDisplayName(backendProfile.displayName);
       }
       if (backendProfile?.guardianData) {
-        setChogGuardian(backendProfile.guardianData.guardian);
+        const restoredGuardian = backendProfile.guardianData.guardian;
+        setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
         setCareXp(backendProfile.guardianData.careXp ?? 0);
         setChogTraits(backendProfile.guardianData.traits ?? []);
         setLastGuardianProofWeek(backendProfile.guardianData.lastProofWeek ?? "");
@@ -2945,6 +2945,12 @@ export default function Web3HealthPage() {
     weeklySleepBoundaries,
     weeklyStressChecks,
   ]);
+
+  useEffect(() => {
+    if (chogGuardian?.mode === "preview") {
+      setChogGuardian(null);
+    }
+  }, [chogGuardian]);
 
   useEffect(() => {
     if (
@@ -3264,19 +3270,6 @@ export default function Web3HealthPage() {
     setDisplayName(nextName);
   };
 
-  const activatePreviewGuardian = () => {
-    if (!walletAddress) return;
-    const tokenId = getPreviewChogTokenId(walletAddress);
-    setChogGuardian({
-      tokenId,
-      label: `CHOG #${tokenId}`,
-      mode: "preview",
-      image: chogGuardianImage,
-      activatedAt: new Date().toISOString(),
-    });
-    setChogActivationError("");
-  };
-
   const selectOwnedChogGuardian = (token: OwnedChogToken) => {
     setChogGuardian({
       tokenId: token.tokenId,
@@ -3306,7 +3299,7 @@ export default function Web3HealthPage() {
       const collection = new Contract(chogGenesisContractAddress, chogGenesisAbi, provider);
       const balance = (await collection.balanceOf(walletAddress)) as bigint;
       if (balance === BigInt(0)) {
-        throw new Error("No Chog Genesis NFT was found in this wallet. Use preview mode to test the full guardian loop.");
+        throw new Error("No CHOG NFT detected. Scan again after buying or receiving one.");
       }
 
       const onchainTokenIds = ((await collection.tokensOfOwner(walletAddress)) as bigint[]).map(String);
@@ -3593,101 +3586,6 @@ export default function Web3HealthPage() {
     );
   }
 
-  if (!isDemoAccount && displayName.trim() && !chogGuardian) {
-    return (
-      <main className="min-h-screen bg-[#F0ECFF] px-4 py-6 text-[#21143A] sm:px-6 sm:py-10">
-        <section className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-6xl overflow-hidden rounded-[2rem] border border-[#D9D0F1] bg-[#171022] shadow-[0_42px_150px_rgba(52,35,92,0.24)] lg:grid-cols-[0.9fr_1.1fr] lg:rounded-[3rem]">
-          <div className="relative min-h-[22rem] overflow-hidden lg:min-h-full">
-            <Image
-              src={chogGuardianImage}
-              alt="Chog holding a collectible card"
-              fill
-              priority
-              sizes="(max-width: 1024px) 100vw, 46vw"
-              className="object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#171022] via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:to-[#171022]/42" />
-            <div className="absolute bottom-5 left-5 rounded-full border border-white/18 bg-[#21143A]/78 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white backdrop-blur-xl">
-              Chog Genesis · Monad
-            </div>
-          </div>
-
-          <div className="flex flex-col justify-between p-6 text-white sm:p-10 lg:p-12">
-            <div>
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <BrandMark className="size-11" />
-                  <div>
-                    <p className="text-sm font-semibold tracking-[0.2em]">CHOG GUARDIAN</p>
-                    <p className="text-xs text-white/42">Wallet {formatWalletAddress(walletAddress)}</p>
-                  </div>
-                </div>
-                <span className="rounded-full border border-white/12 px-3 py-1 text-xs text-white/48">Step 2 of 2</span>
-              </div>
-
-              <p className="mt-12 text-xs font-semibold uppercase tracking-[0.24em] text-trace-green/74">Activate your guardian</p>
-              <h1 className="mt-4 max-w-2xl text-[clamp(3.1rem,6.4vw,6.4rem)] font-medium leading-[0.86] tracking-normal">
-                Give your Chog a reason to care.
-              </h1>
-              <p className="mt-6 max-w-xl text-base leading-7 text-white/58 sm:text-lg sm:leading-8">
-                Your Chog becomes the identity behind Care XP, evolving traits, and weekly recovery proofs. Raw health signals never enter the NFT.
-              </p>
-
-              <div className="mt-8 grid gap-2 sm:grid-cols-3">
-                {[
-                  [LockKeyhole, "Private signals", "Only action proofs leave Trace"],
-                  [Zap, "3× Care XP", "Verified Chogs level up three times faster"],
-                  [BadgeCheck, "Weekly proof", "Claim a wallet-signed recovery record"],
-                ].map(([Icon, label, detail]) => {
-                  const BenefitIcon = Icon as typeof LockKeyhole;
-                  return (
-                    <div key={String(label)} className="border-t border-white/12 pt-4">
-                      <BenefitIcon size={17} className="text-trace-green" />
-                      <p className="mt-3 text-sm font-medium">{String(label)}</p>
-                      <p className="mt-1 text-xs leading-5 text-white/42">{String(detail)}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mt-10">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Button
-                  type="button"
-                  onClick={discoverChogGuardian}
-                  disabled={isDiscoveringChog}
-                  className="h-14 rounded-full bg-trace-green px-6 font-semibold text-[#130B20] hover:bg-[#FF9DCA]"
-                >
-                  {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
-                  {isDiscoveringChog ? "Scanning Monad..." : "Detect my Chog NFT"}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={activatePreviewGuardian}
-                  className="h-14 rounded-full border border-white/18 bg-white/[0.07] px-6 font-semibold text-white hover:bg-white/[0.12]"
-                >
-                  Preview guardian
-                  <ArrowRight className="ml-2 size-4" />
-                </Button>
-              </div>
-              <p className="mt-3 text-xs leading-5 text-white/38">
-                Preview mode includes the health dashboard and standard XP. Verified CHOG holders unlock 3× Care XP, on-chain weekly proofs, and badge mint eligibility.
-              </p>
-              <div className="mt-4">
-                <ChogTokenPicker tokens={ownedChogTokens} onSelect={selectOwnedChogGuardian} dark />
-              </div>
-              {chogActivationError ? (
-                <p className="mt-4 rounded-2xl border border-rose-300/18 bg-rose-300/10 px-4 py-3 text-sm leading-6 text-rose-100">
-                  {chogActivationError}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </section>
-      </main>
-    );
-  }
 
   return (
     <main className="min-h-screen bg-[#F7F5FC] text-[#21143A]">
@@ -5120,7 +5018,7 @@ export default function Web3HealthPage() {
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-[#6F617F]">Active Chog guardian</p>
                                 <p className="mt-1 truncate text-sm font-medium text-[#21182C]">{chogGuardian.label} · Level {guardianLevel}</p>
-                                <p className="mt-1 text-xs text-[#85788F]">{chogGuardian.mode === "wallet" ? "Ownership verified" : "Hackathon preview mode"}</p>
+                                <p className="mt-1 text-xs text-[#85788F]">Ownership verified</p>
                               </div>
                               <button
                                 type="button"
@@ -5134,15 +5032,21 @@ export default function Web3HealthPage() {
                           ) : null}
                           <ChogTokenPicker tokens={ownedChogTokens} onSelect={selectOwnedChogGuardian} />
                           {!chogGuardian && !ownedChogTokens.length ? (
-                            <Button
-                              type="button"
-                              onClick={() => void discoverChogGuardian()}
-                              disabled={isDiscoveringChog}
-                              className="h-11 w-full rounded-full bg-[#21143A] text-white hover:bg-[#33204F]"
-                            >
-                              {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
-                              {isDiscoveringChog ? "Scanning Monad..." : "Detect wallet Chogs"}
-                            </Button>
+                            <div className="rounded-[1.25rem] border border-[#E1DAEF] bg-[#FAF7FF] p-4">
+                              <p className="text-sm font-medium text-[#21182C]">No NFT detected</p>
+                              <p className="mt-1 text-xs leading-5 text-[#746A80]">
+                                Scan again after buying or receiving a CHOG NFT.
+                              </p>
+                              <Button
+                                type="button"
+                                onClick={() => void discoverChogGuardian()}
+                                disabled={isDiscoveringChog}
+                                className="mt-3 h-11 w-full rounded-full bg-[#21143A] text-white hover:bg-[#33204F]"
+                              >
+                                {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
+                                {isDiscoveringChog ? "Scanning Monad..." : "Detect CHOG NFT"}
+                              </Button>
+                            </div>
                           ) : null}
                           {chogActivationError ? <p className="text-xs leading-5 text-[#7555DA]">{chogActivationError}</p> : null}
                           <Button
