@@ -94,7 +94,8 @@ const traceChogGuardianContractAddress = process.env.NEXT_PUBLIC_TRACE_CHOG_GUAR
 const chogGuardianImage = "/chog/chog-guardian.png";
 const chogGenesisAbi = [
   "function balanceOf(address owner) view returns (uint256)",
-  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+  "function tokensOfOwner(address owner) view returns (uint256[])",
+  "function tokenURI(uint256 tokenId) view returns (string)",
 ];
 const traceChogGuardianAbi = [
   "function claimWeeklyProof(uint256 tokenId, uint32 weekKey, bytes32 summaryHash)",
@@ -106,6 +107,12 @@ type ChogGuardianProfile = {
   mode: "wallet" | "preview";
   image: string;
   activatedAt: string;
+};
+
+type OwnedChogToken = {
+  tokenId: string;
+  displayTokenId: string;
+  label: string;
 };
 
 type WalletRegistryEntry = {
@@ -313,6 +320,42 @@ function BrandMark({ className = "" }: { className?: string }) {
       />
       <div className="absolute inset-0 bg-gradient-to-t from-[#21143A]/48 via-transparent to-[#9DFF7A]/8" />
       <div className="absolute inset-x-1 bottom-1 h-0.5 rounded-full bg-trace-green shadow-[0_0_12px_rgba(157,255,122,0.88)]" />
+    </div>
+  );
+}
+
+function ChogTokenPicker({
+  tokens,
+  onSelect,
+  dark = false,
+}: {
+  tokens: OwnedChogToken[];
+  onSelect: (token: OwnedChogToken) => void;
+  dark?: boolean;
+}) {
+  if (!tokens.length) return null;
+
+  return (
+    <div className={`rounded-[1.25rem] border p-3 ${dark ? "border-white/12 bg-white/[0.06]" : "border-[#DED6EE] bg-[#F7F4FF]"}`}>
+      <p className={`text-xs font-semibold uppercase tracking-[0.16em] ${dark ? "text-violet-200/72" : "text-[#7555DA]"}`}>
+        Choose your active Chog
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {tokens.map((token) => (
+          <button
+            key={token.tokenId}
+            type="button"
+            onClick={() => onSelect(token)}
+            className={`min-h-11 rounded-[0.9rem] border px-3 text-sm font-semibold transition ${
+              dark
+                ? "border-white/14 bg-[#21143A] text-white hover:border-trace-green hover:text-trace-green"
+                : "border-[#D9D0F1] bg-white text-[#21143A] hover:border-[#836EF9] hover:text-[#7555DA]"
+            }`}
+          >
+            {token.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1239,6 +1282,11 @@ function MobileTabScreen({
   rewardPoints,
   completedRewardMissions,
   chogGuardian,
+  ownedChogTokens,
+  isDiscoveringChog,
+  chogActivationError,
+  discoverChogGuardian,
+  selectOwnedChogGuardian,
   careXp,
   guardianLevel,
   guardianLevelProgress,
@@ -1282,6 +1330,11 @@ function MobileTabScreen({
   rewardPoints: number;
   completedRewardMissions: string[];
   chogGuardian: ChogGuardianProfile | null;
+  ownedChogTokens: OwnedChogToken[];
+  isDiscoveringChog: boolean;
+  chogActivationError: string;
+  discoverChogGuardian: () => void;
+  selectOwnedChogGuardian: (token: OwnedChogToken) => void;
   careXp: number;
   guardianLevel: number;
   guardianLevelProgress: number;
@@ -1866,12 +1919,35 @@ function MobileTabScreen({
         <section className="grid grid-cols-[5.5rem_1fr] gap-4 rounded-[1.75rem] bg-[#21143a] p-3 text-white shadow-[0_20px_60px_rgba(33,20,58,0.18)]">
           <GuardianArtwork className="aspect-square" />
           <div className="min-w-0 py-2 pr-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/68">Active Chog guardian</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-violet-200/68">Active Chog guardian</p>
+              <button
+                type="button"
+                onClick={discoverChogGuardian}
+                disabled={isDiscoveringChog}
+                className="shrink-0 rounded-full border border-white/16 px-2.5 py-1 text-[0.65rem] font-medium text-white/74"
+              >
+                {isDiscoveringChog ? "Scanning..." : "Change"}
+              </button>
+            </div>
             <p className="mt-2 truncate text-lg font-medium">{chogGuardian.label}</p>
             <p className="mt-1 text-xs text-white/42">Level {guardianLevel} · {chogGuardian.mode === "wallet" ? "Ownership verified" : "Preview mode"}</p>
           </div>
         </section>
       ) : null}
+      <ChogTokenPicker tokens={ownedChogTokens} onSelect={selectOwnedChogGuardian} />
+      {!chogGuardian && !ownedChogTokens.length ? (
+        <Button
+          type="button"
+          onClick={discoverChogGuardian}
+          disabled={isDiscoveringChog}
+          className="h-11 w-full rounded-full bg-[#21143A] text-white hover:bg-[#33204F]"
+        >
+          {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
+          {isDiscoveringChog ? "Scanning Monad..." : "Detect wallet Chogs"}
+        </Button>
+      ) : null}
+      {chogActivationError ? <p className="text-xs leading-5 text-[#7555DA]">{chogActivationError}</p> : null}
       <section className="rounded-[1.75rem] border border-[#dfe7dc] bg-white/86 p-4 shadow-[0_20px_60px_rgba(16,21,16,0.06)]">
         <p className="text-sm font-medium text-[#172117]">Health Apps</p>
         <div className="mt-4 grid grid-cols-4 gap-2">
@@ -1976,6 +2052,7 @@ export default function Web3HealthPage() {
   const [guardianProofTxHash, setGuardianProofTxHash] = useState("");
   const [isDiscoveringChog, setIsDiscoveringChog] = useState(false);
   const [chogActivationError, setChogActivationError] = useState("");
+  const [ownedChogTokens, setOwnedChogTokens] = useState<OwnedChogToken[]>([]);
   const [guardianClaimState, setGuardianClaimState] = useState<"" | "preparing" | "wallet" | "confirmed">("");
   const [eyeBreakCount, setEyeBreakCount] = useState(0);
   const [isEyeResetOnCooldown, setIsEyeResetOnCooldown] = useState(false);
@@ -2556,6 +2633,7 @@ export default function Web3HealthPage() {
       setLastGuardianProofWeek("");
       setGuardianProofTxHash("");
       setChogActivationError("");
+      setOwnedChogTokens([]);
       setEyeBreakCount(0);
       setWeeklyEyeBreaks(0);
       setWeeklyStressChecks(0);
@@ -2589,6 +2667,8 @@ export default function Web3HealthPage() {
       const normalizedWallet = walletAddress.toLowerCase();
       const todayKey = getGmt8DateKey();
       const weekKey = getGmt8WeekKey();
+      const backendProfile = await loadBackendWalletProfile(walletAddress);
+      if (cancelled) return;
 
       if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
         const demoTodayRecord = {
@@ -2600,17 +2680,12 @@ export default function Web3HealthPage() {
         setDisplayName("Mervyn");
         setPendingDisplayName("Mervyn");
         setWalletResetAt("");
-        setChogGuardian({
-          tokenId: "577",
-          label: "CHOG Guardian #577",
-          mode: "preview",
-          image: chogGuardianImage,
-          activatedAt: new Date().toISOString(),
-        });
-        setCareXp(340);
-        setChogTraits(["Focus antenna", "Recovery aura", "Calm trader"]);
-        setLastGuardianProofWeek("");
-        setGuardianProofTxHash("");
+        const savedGuardian = backendProfile?.guardianData?.guardian;
+        setChogGuardian(savedGuardian?.mode === "wallet" ? savedGuardian : null);
+        setCareXp(backendProfile?.guardianData?.careXp ?? 340);
+        setChogTraits(backendProfile?.guardianData?.traits?.length ? backendProfile.guardianData.traits : ["Focus antenna", "Recovery aura", "Calm trader"]);
+        setLastGuardianProofWeek(backendProfile?.guardianData?.lastProofWeek ?? "");
+        setGuardianProofTxHash(backendProfile?.guardianData?.proofReference ?? "");
         setEyeBreakCount(2);
         setWeeklyEyeBreaks(18);
         setWeeklyStressChecks(9);
@@ -2626,9 +2701,6 @@ export default function Web3HealthPage() {
       }
 
       const profileKey = getWalletProfileKey(walletAddress);
-      const backendProfile = await loadBackendWalletProfile(walletAddress);
-      if (cancelled) return;
-
       const storedProfile = window.localStorage.getItem(profileKey);
       let parsedProfile: Partial<WalletProfile> | null = null;
       if (storedProfile) {
@@ -3103,6 +3175,18 @@ export default function Web3HealthPage() {
     setChogActivationError("");
   };
 
+  const selectOwnedChogGuardian = (token: OwnedChogToken) => {
+    setChogGuardian({
+      tokenId: token.tokenId,
+      label: token.label,
+      mode: "wallet",
+      image: chogGuardianImage,
+      activatedAt: new Date().toISOString(),
+    });
+    setOwnedChogTokens([]);
+    setChogActivationError("");
+  };
+
   const discoverChogGuardian = async () => {
     setChogActivationError("");
     if (!window.ethereum || !walletAddress) {
@@ -3123,22 +3207,39 @@ export default function Web3HealthPage() {
         throw new Error("No Chog Genesis NFT was found in this wallet. Use preview mode to test the full guardian loop.");
       }
 
-      let tokenId = getPreviewChogTokenId(walletAddress);
-      try {
-        tokenId = String(await collection.tokenOfOwnerByIndex(walletAddress, 0));
-      } catch {
-        // Some ERC-721 collections omit enumerable methods; ownership is still verified by balanceOf.
+      const onchainTokenIds = ((await collection.tokensOfOwner(walletAddress)) as bigint[]).map(String);
+      const tokens = await Promise.all(
+        onchainTokenIds.map(async (tokenId) => {
+          const tokenUri = String(await collection.tokenURI(tokenId));
+          const metadataFile = tokenUri.match(/\/([^/?#]+)\.json(?:[?#].*)?$/i)?.[1];
+          const displayTokenId = metadataFile ? decodeURIComponent(metadataFile) : tokenId;
+          return {
+            tokenId,
+            displayTokenId,
+            label: `CHOG #${displayTokenId}`,
+          } satisfies OwnedChogToken;
+        }),
+      );
+      tokens.sort((left, right) => Number(left.displayTokenId) - Number(right.displayTokenId));
+
+      if (tokens.length !== Number(balance)) {
+        throw new Error("The Chog collection returned an incomplete ownership list. Please scan again.");
       }
 
-      setChogGuardian({
-        tokenId,
-        label: `CHOG #${tokenId}`,
-        mode: "wallet",
-        image: chogGuardianImage,
-        activatedAt: new Date().toISOString(),
-      });
+      setOwnedChogTokens(tokens);
+      if (tokens.length === 1) {
+        selectOwnedChogGuardian(tokens[0]);
+      } else {
+        setChogGuardian(null);
+        setChogActivationError(`${tokens.length} Chogs found. Choose the guardian you want to activate.`);
+      }
     } catch (error) {
-      setChogActivationError(error instanceof Error ? error.message : "Chog ownership could not be verified.");
+      setOwnedChogTokens([]);
+      setChogActivationError(
+        error instanceof Error
+          ? error.message
+          : "Chog ownership could not be verified. Confirm the wallet is on Monad Mainnet and try again.",
+      );
     } finally {
       setIsDiscoveringChog(false);
     }
@@ -3439,6 +3540,9 @@ export default function Web3HealthPage() {
               <p className="mt-3 text-xs leading-5 text-white/38">
                 NFT detection verifies the Chog Genesis collection on Monad. Preview mode is available for judges and wallets without a Chog.
               </p>
+              <div className="mt-4">
+                <ChogTokenPicker tokens={ownedChogTokens} onSelect={selectOwnedChogGuardian} dark />
+              </div>
               {chogActivationError ? (
                 <p className="mt-4 rounded-2xl border border-rose-300/18 bg-rose-300/10 px-4 py-3 text-sm leading-6 text-rose-100">
                   {chogActivationError}
@@ -3644,6 +3748,11 @@ export default function Web3HealthPage() {
                     rewardPoints={rewardPoints}
                     completedRewardMissions={completedRewardMissions}
                     chogGuardian={chogGuardian}
+                    ownedChogTokens={ownedChogTokens}
+                    isDiscoveringChog={isDiscoveringChog}
+                    chogActivationError={chogActivationError}
+                    discoverChogGuardian={discoverChogGuardian}
+                    selectOwnedChogGuardian={selectOwnedChogGuardian}
                     careXp={careXp}
                     guardianLevel={guardianLevel}
                     guardianLevelProgress={guardianLevelProgress}
@@ -4877,16 +4986,27 @@ export default function Web3HealthPage() {
                               </div>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setChogGuardian(null);
-                                  setChogActivationError("");
-                                }}
+                                onClick={() => void discoverChogGuardian()}
+                                disabled={isDiscoveringChog}
                                 className="rounded-full border border-[#dfe7dc] px-3 py-2 text-xs font-medium text-[#526152] transition hover:border-[#101510] hover:text-[#101510]"
                               >
-                                Change
+                                {isDiscoveringChog ? "Scanning..." : "Change"}
                               </button>
                             </div>
                           ) : null}
+                          <ChogTokenPicker tokens={ownedChogTokens} onSelect={selectOwnedChogGuardian} />
+                          {!chogGuardian && !ownedChogTokens.length ? (
+                            <Button
+                              type="button"
+                              onClick={() => void discoverChogGuardian()}
+                              disabled={isDiscoveringChog}
+                              className="h-11 w-full rounded-full bg-[#21143A] text-white hover:bg-[#33204F]"
+                            >
+                              {isDiscoveringChog ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
+                              {isDiscoveringChog ? "Scanning Monad..." : "Detect wallet Chogs"}
+                            </Button>
+                          ) : null}
+                          {chogActivationError ? <p className="text-xs leading-5 text-[#7555DA]">{chogActivationError}</p> : null}
                           <Button
                             onClick={connectWallet}
                             disabled={isWalletConnecting || Boolean(walletAddress)}
