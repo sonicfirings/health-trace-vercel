@@ -2873,7 +2873,7 @@ export default function Web3HealthPage() {
         setDisplayName("Mervyn");
         setPendingDisplayName("Mervyn");
         setWalletResetAt("");
-        const savedGuardian = backendProfile?.guardianData?.guardian ?? locallySavedGuardian;
+        const savedGuardian = locallySavedGuardian ?? backendProfile?.guardianData?.guardian;
         setChogGuardian(savedGuardian?.mode === "wallet" ? savedGuardian : null);
         setGuardianOwnershipState(savedGuardian?.mode === "wallet" ? "idle" : "missing");
         setCareXp(savedQuest.careXp ?? backendProfile?.guardianData?.careXp ?? 340);
@@ -2924,7 +2924,7 @@ export default function Web3HealthPage() {
         setDisplayName(profile.displayName ?? "");
         setPendingDisplayName(profile.displayName ?? "");
         setWalletResetAt(profile.resetAt ?? backendResetAt ?? "");
-        const restoredGuardian = profile.chogGuardian ?? backendProfile?.guardianData?.guardian ?? locallySavedGuardian;
+        const restoredGuardian = locallySavedGuardian ?? profile.chogGuardian ?? backendProfile?.guardianData?.guardian;
         setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
         setGuardianOwnershipState(restoredGuardian?.mode === "wallet" ? "idle" : "missing");
         setCareXp(profile.careXp ?? backendProfile?.guardianData?.careXp ?? 0);
@@ -3007,7 +3007,7 @@ export default function Web3HealthPage() {
       setHealthPermissions(backendProfile?.healthPermissions ?? emptyHealthPermissions);
       setHealthContextConnectedDate(Object.keys(backendDailyRecords).sort()[0] ?? "");
       setRewardPoints(backendProfile?.rewardPoints ?? 0);
-      const restoredGuardian = backendProfile?.guardianData?.guardian ?? locallySavedGuardian;
+      const restoredGuardian = locallySavedGuardian ?? backendProfile?.guardianData?.guardian;
       setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
       setGuardianOwnershipState(restoredGuardian?.mode === "wallet" ? "idle" : "missing");
       if (backendProfile?.displayName) {
@@ -3469,6 +3469,29 @@ export default function Web3HealthPage() {
     };
     setChogGuardian(selectedGuardian);
     window.localStorage.setItem(getActiveChogStorageKey(walletAddress), JSON.stringify(selectedGuardian));
+    const now = new Date().toISOString();
+    const existingRegistryEntry = getStoredWalletRegistry().find(
+      (entry) => entry.wallet.toLowerCase() === walletAddress.toLowerCase(),
+    );
+    upsertWalletRegistry({
+      wallet: walletAddress,
+      firstSeen: existingRegistryEntry?.firstSeen ?? now,
+      lastSeen: now,
+      displayName,
+      connectedApps: connectedHealthApps.length,
+      connectedHealthApps,
+      healthPermissions,
+      rewardPoints,
+      resetAt: existingRegistryEntry?.resetAt,
+      dailyRecords,
+      guardianData: {
+        guardian: selectedGuardian,
+        careXp,
+        traits: chogTraits,
+        lastProofWeek: lastGuardianProofWeek,
+        proofReference: guardianProofTxHash,
+      },
+    });
     setOwnedChogTokens([]);
     setChogActivationError("");
     setGuardianOwnershipState("verified");
