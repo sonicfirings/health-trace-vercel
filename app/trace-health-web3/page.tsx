@@ -16,6 +16,7 @@ import {
   Droplets,
   Dumbbell,
   FileText,
+  Gamepad2,
   Gem,
   HeartPulse,
   LayoutDashboard,
@@ -45,6 +46,7 @@ import {
 } from "recharts";
 
 import { Button } from "@/components/ui/button";
+import { ChogQuest } from "./chog-quest";
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] | Record<string, unknown>[] }) => Promise<unknown>;
@@ -61,6 +63,7 @@ declare global {
 type HealthTab =
   | "Home"
   | "Guardian"
+  | "Chog Quest"
   | "Market Stress"
   | "Recovery"
   | "Eye Break"
@@ -73,6 +76,7 @@ type HealthTab =
 const navigation: { label: HealthTab; icon: typeof LayoutDashboard }[] = [
   { label: "Home", icon: LayoutDashboard },
   { label: "Guardian", icon: Sparkles },
+  { label: "Chog Quest", icon: Gamepad2 },
   { label: "Market Stress", icon: TrendingUp },
   { label: "Recovery", icon: Moon },
   { label: "Eye Break", icon: Activity },
@@ -87,6 +91,7 @@ const healthTabs = navigation.map((item) => item.label);
 const savedContextWalletAddress = "0xEf6fdfe87081da6acC6E4755d095b8C23568577F";
 const walletStorageKey = "health-trace-web3-wallet";
 const walletProfileStoragePrefix = "health-trace-web3-profile:";
+const chogQuestStoragePrefix = "health-trace-chog-quest:";
 const walletRegistryStorageKey = "health-trace-web3-wallet-registry";
 const chogGenesisContractAddress =
   process.env.NEXT_PUBLIC_CHOG_GENESIS_CONTRACT ?? "0xc96d31f8626c6d03fae5dcd3d61e3fb9f4a73763";
@@ -142,6 +147,8 @@ type WalletProfile = {
   chogTraits: string[];
   lastGuardianProofWeek: string;
   guardianProofTxHash: string;
+  lastChogQuestDate: string;
+  chogQuestStreak: number;
   healthContextConnectedDate: string;
   dailyRecords: Record<string, HealthDailyRecord>;
   lastTaskResetDate: string;
@@ -195,9 +202,11 @@ type HealthDailyRecord = {
   journalSelections: Record<string, string>;
   completedProofActions: string[];
   completedRewardMissions: string[];
+  chogQuestCompleted: boolean;
 };
 
 const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
+const getChogQuestStorageKey = (wallet: string) => `${chogQuestStoragePrefix}${wallet.toLowerCase()}`;
 const getGmt8DateKey = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const getGmt8DateFromKey = (key: string) => new Date(`${key}T00:00:00.000Z`);
 const getGmt8WeekStart = () => {
@@ -247,6 +256,7 @@ const createDailyRecord = (dateKey: string): HealthDailyRecord => {
     journalSelections: {},
     completedProofActions: [],
     completedRewardMissions: [],
+    chogQuestCompleted: false,
   };
 };
 const normalizeDailyRecords = (records: Record<string, Partial<HealthDailyRecord>> = {}) =>
@@ -276,6 +286,7 @@ const careXpByMission: Record<string, number> = {
   "Log FOMO / FUD check-in": 20,
   "Take a recovery walk": 25,
   "Keep midnight boundary": 35,
+  "Complete Chog Reset Quest": 30,
 };
 
 const resolveChogAssetUrl = (uri: string) => {
@@ -320,6 +331,26 @@ const loadOwnedChogToken = async (collection: Contract, tokenId: string): Promis
   }
 
   return { tokenId, displayTokenId, label, image };
+};
+
+const loadWalletChogTokens = async (provider: BrowserProvider, wallet: string) => {
+  const network = await provider.getNetwork();
+  if (network.chainId !== BigInt(143)) {
+    throw new Error("Switch your wallet to Monad Mainnet, then scan again.");
+  }
+
+  const collection = new Contract(chogGenesisContractAddress, chogGenesisAbi, provider);
+  const balance = (await collection.balanceOf(wallet)) as bigint;
+  if (balance === BigInt(0)) return [];
+
+  const tokenIds = ((await collection.tokensOfOwner(wallet)) as bigint[]).map(String);
+  const tokens = await Promise.all(tokenIds.map((tokenId) => loadOwnedChogToken(collection, tokenId)));
+  tokens.sort((left, right) => Number(left.displayTokenId) - Number(right.displayTokenId));
+
+  if (tokens.length !== Number(balance)) {
+    throw new Error("The Chog collection returned an incomplete ownership list. Please scan again.");
+  }
+  return tokens;
 };
 
 const getGuardianMood = (record: HealthDailyRecord | null) => {
@@ -429,6 +460,7 @@ const demoHealthPermissions: Record<string, string[]> = {
 const tabDescriptions: Record<HealthTab, string> = {
   Home: "Health Trace dashboard",
   Guardian: "AI health reasoning",
+  "Chog Quest": "Daily CHOG recovery game",
   "Market Stress": "Volatility and body load",
   Recovery: "Night watch recovery",
   "Eye Break": "Screen fatigue protection",
@@ -458,6 +490,7 @@ const weeklyDemoContexts: Omit<
   | "journalSelections"
   | "completedProofActions"
   | "completedRewardMissions"
+  | "chogQuestCompleted"
 >[] = [
   {
     score: 86,
@@ -1016,6 +1049,7 @@ const journalResponseCopy: Record<string, Record<string, { detail: string; actio
 const syncableProofLabels = ["Recovery walk", "Sleep boundary", "Hydration check"];
 
 const rewardMissions = [
+  { label: "Complete Chog Reset Quest", reward: "+75 HT Points", status: "Daily", icon: Gamepad2, targetTab: "Chog Quest" },
   { label: "Complete 20-20-20 eye break", reward: "+30 HT Points", status: "Ready", icon: Activity, targetTab: "Eye Break" },
   { label: "Log FOMO / FUD check-in", reward: "+45 HT Points", status: "New", icon: MessageCircle, targetTab: "Journal" },
   { label: "Take a recovery walk", reward: "+60 HT Points", status: "Suggested", icon: Dumbbell, targetTab: "Proofs" },
@@ -1342,6 +1376,12 @@ function MobileTabScreen({
   guardianLevel,
   guardianLevelProgress,
   guardianTraits,
+  lastChogQuestDate,
+  chogQuestStreak,
+  todayKey,
+  guardianOwnershipState,
+  verifyActiveChogOwnership,
+  completeChogQuest,
   currentDayRecord,
   isDemoAccount,
   proofActions,
@@ -1390,6 +1430,12 @@ function MobileTabScreen({
   guardianLevel: number;
   guardianLevelProgress: number;
   guardianTraits: string[];
+  lastChogQuestDate: string;
+  chogQuestStreak: number;
+  todayKey: string;
+  guardianOwnershipState: "idle" | "checking" | "verified" | "missing";
+  verifyActiveChogOwnership: () => Promise<boolean>;
+  completeChogQuest: () => void;
   currentDayRecord: HealthDailyRecord | null;
   isDemoAccount: boolean;
   proofActions: ProofAction[];
@@ -1443,6 +1489,26 @@ function MobileTabScreen({
         ["Wind-down", "--"],
       ];
   const mobileBadges = hasMobileGuardianContext ? healthBadges : healthBadges.map((badge) => ({ ...badge, status: "NOT READY" }));
+
+  if (activeTab === "Chog Quest") {
+    return (
+      <ChogQuest
+        guardian={chogGuardian}
+        careXp={careXp}
+        level={guardianLevel}
+        levelProgress={guardianLevelProgress}
+        traits={guardianTraits}
+        streak={chogQuestStreak}
+        lastCompletedDate={lastChogQuestDate}
+        todayKey={todayKey}
+        ownershipState={guardianOwnershipState}
+        detectionError={chogActivationError}
+        onDetect={discoverChogGuardian}
+        onVerifyOwnership={verifyActiveChogOwnership}
+        onComplete={completeChogQuest}
+      />
+    );
+  }
 
   if (activeTab === "Guardian") {
     return (
@@ -2098,6 +2164,7 @@ function MobileTabScreen({
 
 export default function Web3HealthPage() {
   const hydratedWalletRef = useRef("");
+  const verifiedGuardianKeyRef = useRef("");
   const [activeTab, setActiveTab] = useState<HealthTab>("Home");
   const [syncedAt, setSyncedAt] = useState("");
   const [guardianOpen, setGuardianOpen] = useState(true);
@@ -2113,6 +2180,9 @@ export default function Web3HealthPage() {
   const [chogTraits, setChogTraits] = useState<string[]>([]);
   const [lastGuardianProofWeek, setLastGuardianProofWeek] = useState("");
   const [guardianProofTxHash, setGuardianProofTxHash] = useState("");
+  const [lastChogQuestDate, setLastChogQuestDate] = useState("");
+  const [chogQuestStreak, setChogQuestStreak] = useState(0);
+  const [guardianOwnershipState, setGuardianOwnershipState] = useState<"idle" | "checking" | "verified" | "missing">("idle");
   const [isDiscoveringChog, setIsDiscoveringChog] = useState(false);
   const [chogActivationError, setChogActivationError] = useState("");
   const [ownedChogTokens, setOwnedChogTokens] = useState<OwnedChogToken[]>([]);
@@ -2583,6 +2653,7 @@ export default function Web3HealthPage() {
     }
 
     window.localStorage.removeItem(getWalletProfileKey(targetWallet));
+    window.localStorage.removeItem(getChogQuestStorageKey(targetWallet));
     const now = new Date().toISOString();
     saveWalletRegistry(
       walletRegistry.map((entry) =>
@@ -2697,6 +2768,10 @@ export default function Web3HealthPage() {
       setChogTraits([]);
       setLastGuardianProofWeek("");
       setGuardianProofTxHash("");
+      setLastChogQuestDate("");
+      setChogQuestStreak(0);
+      setGuardianOwnershipState("idle");
+      verifiedGuardianKeyRef.current = "";
       setChogActivationError("");
       setOwnedChogTokens([]);
       setEyeBreakCount(0);
@@ -2728,6 +2803,8 @@ export default function Web3HealthPage() {
       }
 
       hydratedWalletRef.current = "";
+      verifiedGuardianKeyRef.current = "";
+      setGuardianOwnershipState("idle");
       window.localStorage.setItem(walletStorageKey, walletAddress);
       const normalizedWallet = walletAddress.toLowerCase();
       const todayKey = getGmt8DateKey();
@@ -2736,31 +2813,49 @@ export default function Web3HealthPage() {
       if (cancelled) return;
 
       if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
+        let savedQuest: { lastCompletedDate?: string; streak?: number; rewardPoints?: number; careXp?: number } = {};
+        try {
+          savedQuest = JSON.parse(window.localStorage.getItem(getChogQuestStorageKey(walletAddress)) ?? "{}") as {
+            lastCompletedDate?: string;
+            streak?: number;
+            rewardPoints?: number;
+            careXp?: number;
+          };
+        } catch {
+          savedQuest = {};
+        }
+        const questCompletedToday = savedQuest.lastCompletedDate === todayKey;
         const demoTodayRecord = {
           ...createDailyRecord(todayKey),
-          eyeBreakCount: 2,
+          eyeBreakCount: questCompletedToday ? 3 : 2,
           postureResetDone: true,
-          completedProofActions: syncableProofLabels,
+          completedProofActions: questCompletedToday ? [...syncableProofLabels, "Chog Reset Quest"] : syncableProofLabels,
+          completedRewardMissions: questCompletedToday ? ["Complete Chog Reset Quest"] : [],
+          chogQuestCompleted: questCompletedToday,
         };
         setDisplayName("Mervyn");
         setPendingDisplayName("Mervyn");
         setWalletResetAt("");
         const savedGuardian = backendProfile?.guardianData?.guardian;
         setChogGuardian(savedGuardian?.mode === "wallet" ? savedGuardian : null);
-        setCareXp(backendProfile?.guardianData?.careXp ?? 340);
+        setGuardianOwnershipState(savedGuardian?.mode === "wallet" ? "idle" : "missing");
+        setCareXp(savedQuest.careXp ?? backendProfile?.guardianData?.careXp ?? 340);
         setChogTraits(backendProfile?.guardianData?.traits?.length ? backendProfile.guardianData.traits : ["Focus antenna", "Recovery aura", "Calm trader"]);
         setLastGuardianProofWeek(backendProfile?.guardianData?.lastProofWeek ?? "");
         setGuardianProofTxHash(backendProfile?.guardianData?.proofReference ?? "");
-        setEyeBreakCount(2);
+        setLastChogQuestDate(savedQuest.lastCompletedDate ?? "");
+        setChogQuestStreak(savedQuest.streak ?? 0);
+        setEyeBreakCount(questCompletedToday ? 3 : 2);
         setWeeklyEyeBreaks(18);
         setWeeklyStressChecks(9);
         setWeeklySleepBoundaries(4);
-        setRewardPoints(1280);
+        setRewardPoints(savedQuest.rewardPoints ?? 1280);
         setConnectedHealthApps(demoConnectedHealthApps);
         setHealthContextConnectedDate(getGmt8WeekKey());
         setDailyRecords({ [todayKey]: demoTodayRecord });
         setHealthPermissions(demoHealthPermissions);
-        setCompletedProofActions(syncableProofLabels);
+        setCompletedProofActions(questCompletedToday ? [...syncableProofLabels, "Chog Reset Quest"] : syncableProofLabels);
+        setCompletedRewardMissions(questCompletedToday ? ["Complete Chog Reset Quest"] : []);
         hydratedWalletRef.current = normalizedWallet;
         return;
       }
@@ -2793,10 +2888,13 @@ export default function Web3HealthPage() {
         setWalletResetAt(profile.resetAt ?? backendResetAt ?? "");
         const restoredGuardian = profile.chogGuardian ?? backendProfile?.guardianData?.guardian ?? null;
         setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
+        setGuardianOwnershipState(restoredGuardian?.mode === "wallet" ? "idle" : "missing");
         setCareXp(profile.careXp ?? backendProfile?.guardianData?.careXp ?? 0);
         setChogTraits(profile.chogTraits ?? backendProfile?.guardianData?.traits ?? []);
         setLastGuardianProofWeek(profile.lastGuardianProofWeek ?? backendProfile?.guardianData?.lastProofWeek ?? "");
         setGuardianProofTxHash(profile.guardianProofTxHash ?? backendProfile?.guardianData?.proofReference ?? "");
+        setLastChogQuestDate(profile.lastChogQuestDate ?? "");
+        setChogQuestStreak(profile.chogQuestStreak ?? 0);
         setEyeBreakCount(shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0);
         setWeeklyEyeBreaks(shouldResetWeeklyCounters ? 0 : profile.weeklyEyeBreaks ?? 0);
         setWeeklyStressChecks(shouldResetWeeklyCounters ? 0 : profile.weeklyStressChecks ?? 0);
@@ -2867,6 +2965,7 @@ export default function Web3HealthPage() {
       if (backendProfile?.guardianData) {
         const restoredGuardian = backendProfile.guardianData.guardian;
         setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
+        setGuardianOwnershipState(restoredGuardian?.mode === "wallet" ? "idle" : "missing");
         setCareXp(backendProfile.guardianData.careXp ?? 0);
         setChogTraits(backendProfile.guardianData.traits ?? []);
         setLastGuardianProofWeek(backendProfile.guardianData.lastProofWeek ?? "");
@@ -2881,6 +2980,14 @@ export default function Web3HealthPage() {
   }, [walletAddress]);
 
   useEffect(() => {
+    if (!walletAddress || hydratedWalletRef.current !== walletAddress.toLowerCase()) return;
+    window.localStorage.setItem(
+      getChogQuestStorageKey(walletAddress),
+      JSON.stringify({ lastCompletedDate: lastChogQuestDate, streak: chogQuestStreak, rewardPoints, careXp }),
+    );
+  }, [careXp, chogQuestStreak, lastChogQuestDate, rewardPoints, walletAddress]);
+
+  useEffect(() => {
     if (!walletAddress || isDemoAccount || hydratedWalletRef.current !== walletAddress.toLowerCase()) {
       return;
     }
@@ -2893,6 +3000,8 @@ export default function Web3HealthPage() {
       chogTraits,
       lastGuardianProofWeek,
       guardianProofTxHash,
+      lastChogQuestDate,
+      chogQuestStreak,
       healthContextConnectedDate,
       dailyRecords,
       lastTaskResetDate: getGmt8DateKey(),
@@ -2932,6 +3041,8 @@ export default function Web3HealthPage() {
     healthContextConnectedDate,
     healthPermissions,
     guardianProofTxHash,
+    lastChogQuestDate,
+    chogQuestStreak,
     isDemoAccount,
     isEyeResetOnCooldown,
     journalSelections,
@@ -2955,37 +3066,15 @@ export default function Web3HealthPage() {
   useEffect(() => {
     if (
       !walletAddress ||
-      !window.ethereum ||
+      hydratedWalletRef.current !== walletAddress.toLowerCase() ||
       !chogGuardian ||
-      chogGuardian.mode !== "wallet" ||
-      chogGuardian.image !== chogGuardianImage
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    const refreshGuardianArtwork = async () => {
-      try {
-        const provider = new BrowserProvider(window.ethereum as Eip1193Provider);
-        const collection = new Contract(chogGenesisContractAddress, chogGenesisAbi, provider);
-        const token = await loadOwnedChogToken(collection, chogGuardian.tokenId);
-        if (!cancelled && token.image !== chogGuardianImage) {
-          setChogGuardian((current) =>
-            current?.tokenId === token.tokenId
-              ? { ...current, label: token.label, image: token.image }
-              : current,
-          );
-        }
-      } catch {
-        // The local mascot remains a fallback until the next successful metadata request.
-      }
-    };
-
-    void refreshGuardianArtwork();
-    return () => {
-      cancelled = true;
-    };
-  }, [chogGuardian, walletAddress]);
+      chogGuardian.mode !== "wallet"
+    ) return;
+    const verificationKey = `${walletAddress.toLowerCase()}:${chogGuardian.tokenId}`;
+    if (verifiedGuardianKeyRef.current === verificationKey) return;
+    verifiedGuardianKeyRef.current = verificationKey;
+    void verifyActiveChogOwnership();
+  }, [chogGuardian?.tokenId, walletAddress]);
 
   useEffect(() => {
     if (!walletAddress || !hasLiveHealthContext || dailyRecords[todayKey]) {
@@ -3015,6 +3104,14 @@ export default function Web3HealthPage() {
   );
   const weeklyRangeLabel = formatGmt8WeekRange();
   const proofActions: ProofAction[] = [
+    {
+      label: "Chog Reset Quest",
+      status: lastChogQuestDate === todayKey ? "Completed today" : "Not completed",
+      icon: Gamepad2,
+      actionLabel: "Open Chog Quest",
+      sourceTab: "Chog Quest",
+      completed: lastChogQuestDate === todayKey,
+    },
     {
       label: "Eye break",
       status: `${eyeBreakCount}/6 completed`,
@@ -3130,7 +3227,7 @@ export default function Web3HealthPage() {
   };
 
   const updateTodayRecord = (updater: (record: HealthDailyRecord) => HealthDailyRecord) => {
-    if (!hasLiveHealthContext) return;
+    if (!walletAddress) return;
     setDailyRecords((current) => {
       const existing = current[todayKey] ?? createDailyRecord(todayKey);
       return {
@@ -3138,6 +3235,40 @@ export default function Web3HealthPage() {
         [todayKey]: updater(existing),
       };
     });
+  };
+
+  const completeChogQuest = () => {
+    if (!chogGuardian || lastChogQuestDate === todayKey) return;
+
+    const yesterday = getGmt8DateFromKey(todayKey);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const yesterdayKey = yesterday.toISOString().slice(0, 10);
+    const nextStreak = lastChogQuestDate === yesterdayKey ? chogQuestStreak + 1 : 1;
+
+    setLastChogQuestDate(todayKey);
+    setChogQuestStreak(nextStreak);
+    setPostureResetDone(true);
+    setEyeBreakCount((current) => {
+      if (current >= 6) return current;
+      setWeeklyEyeBreaks((weekly) => weekly + 1);
+      return current + 1;
+    });
+    setCompletedProofActions((current) =>
+      current.includes("Chog Reset Quest") ? current : [...current, "Chog Reset Quest"],
+    );
+    if (nextStreak >= 3) {
+      setChogTraits((current) => (current.includes("Quest keeper") ? current : [...current, "Quest keeper"]));
+    }
+    completeRewardMission("Complete Chog Reset Quest", 75);
+    updateTodayRecord((record) => ({
+      ...record,
+      chogQuestCompleted: true,
+      eyeBreakCount: Math.min(6, record.eyeBreakCount + 1),
+      postureResetDone: true,
+      completedProofActions: record.completedProofActions.includes("Chog Reset Quest")
+        ? record.completedProofActions
+        : [...record.completedProofActions, "Chog Reset Quest"],
+    }));
   };
 
   const syncProofAction = (proof: ProofAction) => {
@@ -3280,7 +3411,48 @@ export default function Web3HealthPage() {
     });
     setOwnedChogTokens([]);
     setChogActivationError("");
+    setGuardianOwnershipState("verified");
+    verifiedGuardianKeyRef.current = `${walletAddress.toLowerCase()}:${token.tokenId}`;
   };
+
+  async function verifyActiveChogOwnership() {
+    if (!window.ethereum || !walletAddress || !chogGuardian) {
+      setGuardianOwnershipState("missing");
+      return false;
+    }
+
+    setGuardianOwnershipState("checking");
+    try {
+      const provider = new BrowserProvider(window.ethereum as Eip1193Provider);
+      const tokens = await loadWalletChogTokens(provider, walletAddress);
+      const verifiedToken = tokens.find((token) => token.tokenId === chogGuardian.tokenId);
+      if (!verifiedToken) {
+        setOwnedChogTokens(tokens);
+        setChogGuardian(null);
+        setGuardianOwnershipState("missing");
+        setChogActivationError("The active CHOG is no longer in this wallet. Progress is saved; select or detect another CHOG to continue.");
+        verifiedGuardianKeyRef.current = "";
+        return false;
+      }
+
+      setChogGuardian((current) =>
+        current?.tokenId === verifiedToken.tokenId
+          ? { ...current, label: verifiedToken.label, image: verifiedToken.image }
+          : current,
+      );
+      setGuardianOwnershipState("verified");
+      setChogActivationError("");
+      return true;
+    } catch (error) {
+      setGuardianOwnershipState("idle");
+      setChogActivationError(
+        error instanceof Error
+          ? error.message
+          : "Chog ownership could not be verified. Confirm the wallet is on Monad Mainnet and try again.",
+      );
+      return false;
+    }
+  }
 
   const discoverChogGuardian = async () => {
     setChogActivationError("");
@@ -3290,24 +3462,14 @@ export default function Web3HealthPage() {
     }
 
     setIsDiscoveringChog(true);
+    setGuardianOwnershipState("checking");
     try {
       const provider = new BrowserProvider(window.ethereum as Eip1193Provider);
-      const network = await provider.getNetwork();
-      if (network.chainId !== BigInt(143)) {
-        throw new Error("Switch your wallet to Monad Mainnet, then scan again.");
-      }
-      const collection = new Contract(chogGenesisContractAddress, chogGenesisAbi, provider);
-      const balance = (await collection.balanceOf(walletAddress)) as bigint;
-      if (balance === BigInt(0)) {
+      const tokens = await loadWalletChogTokens(provider, walletAddress);
+      if (!tokens.length) {
+        setChogGuardian(null);
+        setGuardianOwnershipState("missing");
         throw new Error("No CHOG NFT detected. Scan again after buying or receiving one.");
-      }
-
-      const onchainTokenIds = ((await collection.tokensOfOwner(walletAddress)) as bigint[]).map(String);
-      const tokens = await Promise.all(onchainTokenIds.map((tokenId) => loadOwnedChogToken(collection, tokenId)));
-      tokens.sort((left, right) => Number(left.displayTokenId) - Number(right.displayTokenId));
-
-      if (tokens.length !== Number(balance)) {
-        throw new Error("The Chog collection returned an incomplete ownership list. Please scan again.");
       }
 
       setOwnedChogTokens(tokens);
@@ -3315,10 +3477,12 @@ export default function Web3HealthPage() {
         selectOwnedChogGuardian(tokens[0]);
       } else {
         setChogGuardian(null);
+        setGuardianOwnershipState("verified");
         setChogActivationError(`${tokens.length} Chogs found. Choose the guardian you want to activate.`);
       }
     } catch (error) {
       setOwnedChogTokens([]);
+      setGuardianOwnershipState((current) => (current === "missing" ? "missing" : "idle"));
       setChogActivationError(
         error instanceof Error
           ? error.message
@@ -3336,6 +3500,7 @@ export default function Web3HealthPage() {
       return;
     }
     if (!guardianWeeklyProofReady) return;
+    if (!(await verifyActiveChogOwnership())) return;
 
     setChogActivationError("");
     setGuardianClaimState("preparing");
@@ -3789,6 +3954,12 @@ export default function Web3HealthPage() {
                     guardianLevel={guardianLevel}
                     guardianLevelProgress={guardianLevelProgress}
                     guardianTraits={guardianTraits}
+                    lastChogQuestDate={lastChogQuestDate}
+                    chogQuestStreak={chogQuestStreak}
+                    todayKey={todayKey}
+                    guardianOwnershipState={guardianOwnershipState}
+                    verifyActiveChogOwnership={verifyActiveChogOwnership}
+                    completeChogQuest={completeChogQuest}
                     currentDayRecord={currentDayRecord}
                     isDemoAccount={isDemoAccount}
                     proofActions={proofActions}
@@ -4123,6 +4294,26 @@ export default function Web3HealthPage() {
                   </Reveal>
                 </div>
                 </>
+              ) : null}
+
+              {activeTab === "Chog Quest" ? (
+                <Reveal className="hidden lg:block">
+                  <ChogQuest
+                    guardian={chogGuardian}
+                    careXp={careXp}
+                    level={guardianLevel}
+                    levelProgress={guardianLevelProgress}
+                    traits={guardianTraits}
+                    streak={chogQuestStreak}
+                    lastCompletedDate={lastChogQuestDate}
+                    todayKey={todayKey}
+                    ownershipState={guardianOwnershipState}
+                    detectionError={chogActivationError}
+                    onDetect={discoverChogGuardian}
+                    onVerifyOwnership={verifyActiveChogOwnership}
+                    onComplete={completeChogQuest}
+                  />
+                </Reveal>
               ) : null}
 
               {activeTab === "Guardian" ? (
