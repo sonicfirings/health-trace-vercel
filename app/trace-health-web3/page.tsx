@@ -92,6 +92,7 @@ const savedContextWalletAddress = "0xEf6fdfe87081da6acC6E4755d095b8C23568577F";
 const walletStorageKey = "health-trace-web3-wallet";
 const walletProfileStoragePrefix = "health-trace-web3-profile:";
 const chogQuestStoragePrefix = "health-trace-chog-quest:";
+const activeChogStoragePrefix = "health-trace-active-chog:";
 const walletRegistryStorageKey = "health-trace-web3-wallet-registry";
 const chogGenesisContractAddress =
   process.env.NEXT_PUBLIC_CHOG_GENESIS_CONTRACT ?? "0xc96d31f8626c6d03fae5dcd3d61e3fb9f4a73763";
@@ -210,6 +211,7 @@ type HealthDailyRecord = {
 
 const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
 const getChogQuestStorageKey = (wallet: string) => `${chogQuestStoragePrefix}${wallet.toLowerCase()}`;
+const getActiveChogStorageKey = (wallet: string) => `${activeChogStoragePrefix}${wallet.toLowerCase()}`;
 const getGmt8DateKey = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const getGmt8DateFromKey = (key: string) => new Date(`${key}T00:00:00.000Z`);
 const getGmt8WeekStart = () => {
@@ -2660,6 +2662,7 @@ export default function Web3HealthPage() {
 
     window.localStorage.removeItem(getWalletProfileKey(targetWallet));
     window.localStorage.removeItem(getChogQuestStorageKey(targetWallet));
+    window.localStorage.removeItem(getActiveChogStorageKey(targetWallet));
     const now = new Date().toISOString();
     saveWalletRegistry(
       walletRegistry.map((entry) =>
@@ -2822,6 +2825,15 @@ export default function Web3HealthPage() {
       const weekKey = getGmt8WeekKey();
       const backendProfile = await loadBackendWalletProfile(walletAddress);
       if (cancelled) return;
+      let locallySavedGuardian: ChogGuardianProfile | null = null;
+      try {
+        const storedGuardian = JSON.parse(
+          window.localStorage.getItem(getActiveChogStorageKey(walletAddress)) ?? "null",
+        ) as ChogGuardianProfile | null;
+        locallySavedGuardian = storedGuardian?.mode === "wallet" ? storedGuardian : null;
+      } catch {
+        window.localStorage.removeItem(getActiveChogStorageKey(walletAddress));
+      }
 
       if (normalizedWallet === savedContextWalletAddress.toLowerCase()) {
         let savedQuest: { lastCompletedDate?: string; streak?: number; rewardPoints?: number; careXp?: number } = {};
@@ -2861,7 +2873,7 @@ export default function Web3HealthPage() {
         setDisplayName("Mervyn");
         setPendingDisplayName("Mervyn");
         setWalletResetAt("");
-        const savedGuardian = backendProfile?.guardianData?.guardian;
+        const savedGuardian = backendProfile?.guardianData?.guardian ?? locallySavedGuardian;
         setChogGuardian(savedGuardian?.mode === "wallet" ? savedGuardian : null);
         setGuardianOwnershipState(savedGuardian?.mode === "wallet" ? "idle" : "missing");
         setCareXp(savedQuest.careXp ?? backendProfile?.guardianData?.careXp ?? 340);
@@ -2900,6 +2912,7 @@ export default function Web3HealthPage() {
       const localResetAt = parsedProfile?.resetAt;
       if (backendResetAt && (!localResetAt || new Date(backendResetAt).getTime() > new Date(localResetAt).getTime())) {
         window.localStorage.removeItem(profileKey);
+        window.localStorage.removeItem(getActiveChogStorageKey(walletAddress));
         resetToEmptyWallet(normalizedWallet, backendResetAt);
         return;
       }
@@ -2911,7 +2924,7 @@ export default function Web3HealthPage() {
         setDisplayName(profile.displayName ?? "");
         setPendingDisplayName(profile.displayName ?? "");
         setWalletResetAt(profile.resetAt ?? backendResetAt ?? "");
-        const restoredGuardian = profile.chogGuardian ?? backendProfile?.guardianData?.guardian ?? null;
+        const restoredGuardian = profile.chogGuardian ?? backendProfile?.guardianData?.guardian ?? locallySavedGuardian;
         setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
         setGuardianOwnershipState(restoredGuardian?.mode === "wallet" ? "idle" : "missing");
         setCareXp(profile.careXp ?? backendProfile?.guardianData?.careXp ?? 0);
@@ -2994,14 +3007,14 @@ export default function Web3HealthPage() {
       setHealthPermissions(backendProfile?.healthPermissions ?? emptyHealthPermissions);
       setHealthContextConnectedDate(Object.keys(backendDailyRecords).sort()[0] ?? "");
       setRewardPoints(backendProfile?.rewardPoints ?? 0);
+      const restoredGuardian = backendProfile?.guardianData?.guardian ?? locallySavedGuardian;
+      setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
+      setGuardianOwnershipState(restoredGuardian?.mode === "wallet" ? "idle" : "missing");
       if (backendProfile?.displayName) {
         setDisplayName(backendProfile.displayName);
         setPendingDisplayName(backendProfile.displayName);
       }
       if (backendProfile?.guardianData) {
-        const restoredGuardian = backendProfile.guardianData.guardian;
-        setChogGuardian(restoredGuardian?.mode === "wallet" ? restoredGuardian : null);
-        setGuardianOwnershipState(restoredGuardian?.mode === "wallet" ? "idle" : "missing");
         setCareXp(backendProfile.guardianData.careXp ?? 0);
         setChogTraits(backendProfile.guardianData.traits ?? []);
         setLastGuardianProofWeek(backendProfile.guardianData.lastProofWeek ?? "");
@@ -3022,6 +3035,16 @@ export default function Web3HealthPage() {
       JSON.stringify({ lastCompletedDate: lastChogQuestDate, streak: chogQuestStreak, rewardPoints, careXp }),
     );
   }, [careXp, chogQuestStreak, lastChogQuestDate, rewardPoints, walletAddress]);
+
+  useEffect(() => {
+    if (
+      !walletAddress ||
+      hydratedWalletRef.current !== walletAddress.toLowerCase() ||
+      !chogGuardian ||
+      chogGuardian.mode !== "wallet"
+    ) return;
+    window.localStorage.setItem(getActiveChogStorageKey(walletAddress), JSON.stringify(chogGuardian));
+  }, [chogGuardian, walletAddress]);
 
   useEffect(() => {
     if (!walletAddress || isDemoAccount || hydratedWalletRef.current !== walletAddress.toLowerCase()) {
@@ -3437,13 +3460,15 @@ export default function Web3HealthPage() {
   };
 
   const selectOwnedChogGuardian = (token: OwnedChogToken) => {
-    setChogGuardian({
+    const selectedGuardian: ChogGuardianProfile = {
       tokenId: token.tokenId,
       label: token.label,
       mode: "wallet",
       image: token.image,
       activatedAt: new Date().toISOString(),
-    });
+    };
+    setChogGuardian(selectedGuardian);
+    window.localStorage.setItem(getActiveChogStorageKey(walletAddress), JSON.stringify(selectedGuardian));
     setOwnedChogTokens([]);
     setChogActivationError("");
     setGuardianOwnershipState("verified");
@@ -3464,6 +3489,7 @@ export default function Web3HealthPage() {
       if (!verifiedToken) {
         setOwnedChogTokens(tokens);
         setChogGuardian(null);
+        window.localStorage.removeItem(getActiveChogStorageKey(walletAddress));
         setGuardianOwnershipState("missing");
         setChogActivationError("The active CHOG is no longer in this wallet. Progress is saved; select or detect another CHOG to continue.");
         verifiedGuardianKeyRef.current = "";
@@ -3503,6 +3529,7 @@ export default function Web3HealthPage() {
       const tokens = await loadWalletChogTokens(provider, walletAddress);
       if (!tokens.length) {
         setChogGuardian(null);
+        window.localStorage.removeItem(getActiveChogStorageKey(walletAddress));
         setGuardianOwnershipState("missing");
         throw new Error("No CHOG NFT detected. Scan again after buying or receiving one.");
       }
