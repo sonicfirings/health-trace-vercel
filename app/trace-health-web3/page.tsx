@@ -209,6 +209,17 @@ type HealthDailyRecord = {
   chogQuestCompleted: boolean;
 };
 
+type MarketVolatilitySnapshot = {
+  symbol: "BTCUSDT";
+  currentVolatility: number;
+  baselineVolatility: number;
+  changeVsBaseline: number;
+  chart: number[];
+  source: string;
+  updatedAt: string;
+  stale: boolean;
+};
+
 const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
 const getChogQuestStorageKey = (wallet: string) => `${chogQuestStoragePrefix}${wallet.toLowerCase()}`;
 const getActiveChogStorageKey = (wallet: string) => `${activeChogStoragePrefix}${wallet.toLowerCase()}`;
@@ -1388,6 +1399,7 @@ function MobileTabScreen({
   verifyActiveChogOwnership,
   completeChogQuest,
   currentDayRecord,
+  liveVolatilityValue,
   isDemoAccount,
   proofActions,
   proofStreakLabel,
@@ -1442,6 +1454,7 @@ function MobileTabScreen({
   verifyActiveChogOwnership: () => Promise<boolean>;
   completeChogQuest: () => void;
   currentDayRecord: HealthDailyRecord | null;
+  liveVolatilityValue: string;
   isDemoAccount: boolean;
   proofActions: ProofAction[];
   proofStreakLabel: string;
@@ -1467,18 +1480,18 @@ function MobileTabScreen({
         { label: "91%", detail: "Confidence", className: "border-trace-green/30 bg-trace-green/15 text-trace-green" },
       ]
     : [
-        { label: "Market feed", detail: `BTC ${currentDayRecord?.marketVolatility ?? "+18%"}`, className: "border-amber-300/25 bg-amber-300/10 text-white" },
+        { label: "Market feed", detail: `BTC ${liveVolatilityValue}`, className: "border-amber-300/25 bg-amber-300/10 text-white" },
         { label: "Devices", detail: "0 sources", className: "border-white/10 bg-white/[0.06] text-white" },
         { label: "Personal", detail: "0%", className: "border-white/10 bg-white/[0.06] text-white" },
       ];
   const mobileMarketStats = hasMobileGuardianContext
     ? [
-        ["Volatility", currentDayRecord?.marketVolatility ?? "+18%"],
+        ["Volatility", liveVolatilityValue],
         ["Screen load", currentDayRecord?.screenFatigue ?? "0m"],
         ["Body stress", currentDayRecord?.bodyStress ?? "Moderate"],
       ]
     : [
-        ["Volatility", "+18%"],
+        ["Volatility", liveVolatilityValue],
         ["Screen load", "--"],
         ["Body stress", "--"],
       ];
@@ -2211,6 +2224,8 @@ export default function Web3HealthPage() {
   const [connectedHealthApps, setConnectedHealthApps] = useState<string[]>([]);
   const [healthContextConnectedDate, setHealthContextConnectedDate] = useState("");
   const [dailyRecords, setDailyRecords] = useState<Record<string, HealthDailyRecord>>({});
+  const [liveMarketVolatility, setLiveMarketVolatility] = useState<MarketVolatilitySnapshot | null>(null);
+  const [marketVolatilityUnavailable, setMarketVolatilityUnavailable] = useState(false);
   const [pendingDisconnectApp, setPendingDisconnectApp] = useState("");
   const [healthPermissions, setHealthPermissions] = useState<Record<string, string[]>>(emptyHealthPermissions);
   const [badgeHintOpen, setBadgeHintOpen] = useState("");
@@ -2260,10 +2275,64 @@ export default function Web3HealthPage() {
     : weeklyProofDayCount > 0
       ? `${weeklyProofDayCount} day${weeklyProofDayCount === 1 ? "" : "s"}`
       : "0 days";
-  const currentDayRecord = hasLiveHealthContext
+  const baseCurrentDayRecord = hasLiveHealthContext
     ? dailyRecords[todayKey]
       ? { ...createDailyRecord(todayKey), ...dailyRecords[todayKey] }
       : createDailyRecord(todayKey)
+    : null;
+  const liveVolatilityChange = liveMarketVolatility?.changeVsBaseline ?? null;
+  const liveVolatilityComparison = liveVolatilityChange === null
+    ? null
+    : `${liveVolatilityChange >= 0 ? "+" : ""}${Math.round(liveVolatilityChange)}%`;
+  const liveVolatilityDirection = liveVolatilityChange === null
+    ? "against the 7-day baseline"
+    : liveVolatilityChange >= 0
+      ? "above the 7-day baseline"
+      : "below the 7-day baseline";
+  const liveVolatilityValue = liveMarketVolatility
+    ? `${liveMarketVolatility.currentVolatility.toFixed(1)}%`
+    : "--";
+  const liveVolatilityDetail = liveVolatilityComparison
+    ? `${liveVolatilityComparison} ${liveVolatilityDirection}`
+    : marketVolatilityUnavailable
+      ? "Live feed temporarily unavailable"
+      : "Loading Binance market feed";
+  const liveVolatilityUpdatedLabel = liveMarketVolatility
+    ? new Intl.DateTimeFormat("en-SG", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Singapore",
+      }).format(new Date(liveMarketVolatility.updatedAt))
+    : "";
+  const liveVolatilityFeedNote = liveMarketVolatility
+    ? `${liveVolatilityDetail} | Binance | ${liveMarketVolatility.stale ? "cached" : `updated ${liveVolatilityUpdatedLabel}`}`
+    : liveVolatilityDetail;
+  const liveMarketStress = baseCurrentDayRecord && liveMarketVolatility
+    ? Math.min(
+        100,
+        Math.max(
+          0,
+          Math.round(createDailyRecord(todayKey).marketStress * 0.65 + Math.min(100, liveMarketVolatility.currentVolatility) * 0.35),
+        ),
+      )
+    : baseCurrentDayRecord?.marketStress;
+  const currentDayRecord = baseCurrentDayRecord
+    ? {
+        ...baseCurrentDayRecord,
+        market: liveMarketStress ?? baseCurrentDayRecord.market,
+        marketStress: liveMarketStress ?? baseCurrentDayRecord.marketStress,
+        marketVolatility: liveVolatilityComparison ?? baseCurrentDayRecord.marketVolatility,
+        guardianEvidence: baseCurrentDayRecord.guardianEvidence.map(([title, detail, href]) =>
+          title === "Market volatility" && liveMarketVolatility
+            ? [
+                title,
+                `BTC realized volatility is ${liveVolatilityValue}, ${liveVolatilityDetail}.`,
+                "https://www.binance.com/en/trade/BTC_USDT",
+              ]
+            : [title, detail, href],
+        ) as [string, string, string?][],
+      }
     : null;
   const guardianLevel = Math.min(6, Math.max(1, Math.floor(careXp / 100) + 1));
   const hasVerifiedChog = chogGuardian?.mode === "wallet";
@@ -2326,9 +2395,19 @@ export default function Web3HealthPage() {
     if (signal.label === "Market Stress") {
       return {
         ...signal,
-        value: currentDayRecord ? String(currentDayRecord.marketStress) : "--",
-        detail: currentDayRecord ? `BTC volatility is ${currentDayRecord.marketVolatility} vs baseline` : "No source connected yet",
-        chart: dashboardMarketSeries,
+        value: currentDayRecord
+          ? String(currentDayRecord.marketStress)
+          : liveMarketVolatility
+            ? liveVolatilityValue
+            : "--",
+        detail: currentDayRecord
+          ? `BTC volatility is ${liveVolatilityValue}; ${liveVolatilityDetail}`
+          : liveMarketVolatility
+            ? `Live BTC volatility; ${liveVolatilityDetail}`
+            : liveVolatilityDetail,
+        chart: currentDayRecord
+          ? dashboardMarketSeries
+          : liveMarketVolatility?.chart ?? [0, 0, 0, 0, 0, 0, 0],
       };
     }
     if (signal.label === "Sleep Debt") {
@@ -2398,11 +2477,21 @@ export default function Web3HealthPage() {
         if (driver.label === "Body stress") {
           return { ...driver, value: currentDayRecord?.bodyStress ?? "Moderate", note: "HRV recovery still acceptable" };
         }
-        return { ...driver, value: currentDayRecord?.marketVolatility ?? "+18%", note: "Above 7-day baseline" };
+        return {
+          ...driver,
+          value: liveVolatilityValue,
+          note: liveVolatilityFeedNote,
+          chart: liveMarketVolatility?.chart ?? driver.chart,
+        };
       })
     : marketDrivers.map((driver) =>
         driver.label === "BTC volatility"
-          ? driver
+          ? {
+              ...driver,
+              value: liveVolatilityValue,
+              note: liveVolatilityFeedNote,
+              chart: liveMarketVolatility?.chart ?? driver.chart,
+            }
           : {
               ...driver,
               value: "--",
@@ -2435,14 +2524,20 @@ export default function Web3HealthPage() {
         { label: "91% confidence", detail: "Strong signal match", className: "border-[#FF7BAC]/50 bg-[#FFF0F7] text-[#7555DA]" },
       ]
     : [
-        { label: "Market feed live", detail: `BTC volatility ${currentDayRecord?.marketVolatility ?? "+18%"}`, className: "border-amber-200 bg-amber-50 text-amber-700" },
+        { label: "Market feed live", detail: `BTC volatility ${liveVolatilityValue}`, className: "border-amber-200 bg-amber-50 text-amber-700" },
         { label: "Devices connected", detail: "0 sources", className: "border-[#E1DAEF] bg-white text-[#756A82]" },
         { label: "Personal confidence", detail: "0%", className: "border-[#E1DAEF] bg-white text-[#756A82]" },
       ];
   const guardianEvidence = currentDayRecord
     ? currentDayRecord.guardianEvidence
     : [
-        ["Market volatility", "BTC volatility is +18% above the 7-day baseline.", "https://www.tradingview.com/symbols/BTCUSD/"],
+        [
+          "Market volatility",
+          liveMarketVolatility
+            ? `BTC realized volatility is ${liveVolatilityValue}, ${liveVolatilityDetail}.`
+            : liveVolatilityDetail,
+          "https://www.binance.com/en/trade/BTC_USDT",
+        ],
         ["Sleep debt", "0 hours. Connect Apple Health, Samsung Health, Google Fit, or Mi Fitness to estimate recovery debt."],
         ["Screen fatigue", "0 minutes. Connect a device or screen context source to unlock fatigue detection."],
         ["Decision risk", "0 personalized risk. Health Trace needs sleep, screen, and journal signals before recommending trading decisions."],
@@ -2451,7 +2546,13 @@ export default function Web3HealthPage() {
     ? { value: currentDayRecord?.guardianRisk ?? "Watch", label: "Attention risk", chart: [42, 48, 56, 64, 72, 68, currentDayRecord?.marketStress ?? 62] }
     : { value: "0", label: "Personal signals", chart: [0, 0, 0, 0, 0, 0, 0] };
   const marketStressScore = currentDayRecord ? String(currentDayRecord.marketStress) : "--";
-  const marketStressLabel = hasLiveHealthContext ? "Elevated, manageable" : "Health context needed";
+  const marketStressLabel = !hasLiveHealthContext
+    ? "Health context needed"
+    : (currentDayRecord?.marketStress ?? 0) >= 75
+      ? "High attention load"
+      : (currentDayRecord?.marketStress ?? 0) >= 55
+        ? "Elevated, manageable"
+        : "Calmer market load";
   const dailyGuardianProtocol = currentDayRecord?.guardianProtocol ?? guardianProtocolActions;
   const marketStressCopy = currentDayRecord
     ? currentDayRecord.marketStressCopy
@@ -2684,6 +2785,66 @@ export default function Web3HealthPage() {
       body: JSON.stringify({ adminWallet: walletAddress, targetWallet }),
     }).catch(() => undefined);
   };
+
+  useEffect(() => {
+    let active = true;
+
+    const loadMarketVolatility = async () => {
+      try {
+        const response = await fetch("/api/market-volatility", { cache: "no-store" });
+        if (!response.ok) throw new Error("Market volatility feed unavailable.");
+        const snapshot = (await response.json()) as MarketVolatilitySnapshot;
+        if (!active) return;
+        setLiveMarketVolatility(snapshot);
+        setMarketVolatilityUnavailable(false);
+      } catch {
+        if (active) setMarketVolatilityUnavailable(true);
+      }
+    };
+
+    void loadMarketVolatility();
+    const timer = window.setInterval(loadMarketVolatility, 5 * 60 * 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !walletAddress ||
+      !hasLiveHealthContext ||
+      !liveMarketVolatility ||
+      hydratedWalletRef.current !== walletAddress.toLowerCase()
+    ) {
+      return;
+    }
+
+    const comparison = `${liveMarketVolatility.changeVsBaseline >= 0 ? "+" : ""}${Math.round(liveMarketVolatility.changeVsBaseline)}%`;
+    const marketStress = Math.min(
+      100,
+      Math.max(
+        0,
+        Math.round(createDailyRecord(todayKey).marketStress * 0.65 + Math.min(100, liveMarketVolatility.currentVolatility) * 0.35),
+      ),
+    );
+    setDailyRecords((records) => {
+      const existing = records[todayKey] ?? createDailyRecord(todayKey);
+      if (existing.marketStress === marketStress && existing.marketVolatility === comparison) {
+        return records;
+      }
+
+      return {
+        ...records,
+        [todayKey]: {
+          ...existing,
+          market: marketStress,
+          marketStress,
+          marketVolatility: comparison,
+        },
+      };
+    });
+  }, [hasLiveHealthContext, liveMarketVolatility, todayKey, walletAddress]);
 
   useEffect(() => {
     const updateSyncedAt = () => {
@@ -4075,6 +4236,7 @@ export default function Web3HealthPage() {
                     verifyActiveChogOwnership={verifyActiveChogOwnership}
                     completeChogQuest={completeChogQuest}
                     currentDayRecord={currentDayRecord}
+                    liveVolatilityValue={liveVolatilityValue}
                     isDemoAccount={isDemoAccount}
                     proofActions={proofActions}
                     proofStreakLabel={proofStreakLabel}
