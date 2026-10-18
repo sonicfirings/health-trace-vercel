@@ -14,6 +14,9 @@ type WalletRegistryPayload = {
   adminWallet?: string;
   targetWallet?: string;
   guardianData?: Record<string, unknown>;
+  dailyRecords?: Record<string, unknown>;
+  connectedHealthApps?: string[];
+  healthPermissions?: Record<string, string[]>;
 };
 
 const getSupabaseConfig = () => {
@@ -54,12 +57,12 @@ export async function GET(request: NextRequest) {
 
   if (wallet) {
     let response = await supabaseRequest(
-      `wallet_profiles?wallet_address=eq.${encodeURIComponent(wallet)}&select=wallet_address,display_name,connected_app_count,reward_points,guardian_data,created_at,last_seen_at,reset_at&limit=1`,
+      `wallet_profiles?wallet_address=eq.${encodeURIComponent(wallet)}&select=wallet_address,display_name,connected_health_apps,connected_app_count,health_permissions,reward_points,guardian_data,created_at,last_seen_at,reset_at&limit=1`,
     );
 
     if (response && !response.ok) {
       response = await supabaseRequest(
-        `wallet_profiles?wallet_address=eq.${encodeURIComponent(wallet)}&select=wallet_address,display_name,connected_app_count,reward_points,created_at,last_seen_at,reset_at&limit=1`,
+        `wallet_profiles?wallet_address=eq.${encodeURIComponent(wallet)}&select=wallet_address,display_name,connected_health_apps,connected_app_count,health_permissions,reward_points,created_at,last_seen_at,reset_at&limit=1`,
       );
     }
 
@@ -75,6 +78,8 @@ export async function GET(request: NextRequest) {
       wallet_address: string;
       display_name: string | null;
       connected_app_count: number | null;
+      connected_health_apps: string[] | null;
+      health_permissions: Record<string, string[]> | null;
       reward_points: number | null;
       guardian_data?: Record<string, unknown> | null;
       created_at: string;
@@ -82,6 +87,16 @@ export async function GET(request: NextRequest) {
       reset_at: string | null;
     }>;
     const row = rows[0];
+    let dailyRecords: Record<string, unknown> = {};
+    if (row) {
+      const dailyResponse = await supabaseRequest(
+        `daily_records?wallet_address=eq.${encodeURIComponent(wallet)}&select=date_key,data&order=date_key.asc`,
+      );
+      if (dailyResponse?.ok) {
+        const dailyRows = (await dailyResponse.json()) as Array<{ date_key: string; data: unknown }>;
+        dailyRecords = Object.fromEntries(dailyRows.map((dailyRow) => [dailyRow.date_key, dailyRow.data]));
+      }
+    }
 
     return NextResponse.json({
       wallet: row
@@ -91,8 +106,11 @@ export async function GET(request: NextRequest) {
             lastSeen: row.last_seen_at,
             displayName: row.display_name ?? "",
             connectedApps: row.connected_app_count ?? 0,
+            connectedHealthApps: row.connected_health_apps ?? [],
+            healthPermissions: row.health_permissions ?? {},
             rewardPoints: row.reward_points ?? 0,
             guardianData: row.guardian_data ?? undefined,
+            dailyRecords,
             resetAt: row.reset_at ?? undefined,
           }
         : null,
@@ -159,6 +177,8 @@ export async function POST(request: NextRequest) {
     wallet_address: wallet,
     display_name: body.displayName ?? body.display_name ?? "",
     connected_app_count: body.connectedApps ?? body.connected_app_count ?? 0,
+    connected_health_apps: body.connectedHealthApps ?? [],
+    health_permissions: body.healthPermissions ?? {},
     reward_points: body.rewardPoints ?? body.reward_points ?? 0,
     ...(body.guardianData ? { guardian_data: body.guardianData } : {}),
     last_seen_at: now,
@@ -184,6 +204,23 @@ export async function POST(request: NextRequest) {
 
   if (!response.ok) {
     return NextResponse.json({ error: await response.text() }, { status: response.status });
+  }
+
+  const dailyRows = Object.entries(body.dailyRecords ?? {}).map(([dateKey, data]) => ({
+    wallet_address: wallet,
+    date_key: dateKey,
+    data,
+    updated_at: now,
+  }));
+  if (dailyRows.length) {
+    const dailyResponse = await supabaseRequest("daily_records?on_conflict=wallet_address,date_key", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(dailyRows),
+    });
+    if (dailyResponse && !dailyResponse.ok) {
+      return NextResponse.json({ error: await dailyResponse.text() }, { status: dailyResponse.status });
+    }
   }
 
   return NextResponse.json({ ok: true });

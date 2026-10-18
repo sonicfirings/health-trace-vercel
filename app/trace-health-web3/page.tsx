@@ -130,6 +130,9 @@ type WalletRegistryEntry = {
   connectedApps: number;
   rewardPoints: number;
   resetAt?: string;
+  dailyRecords?: Record<string, HealthDailyRecord>;
+  connectedHealthApps?: string[];
+  healthPermissions?: Record<string, string[]>;
   guardianData?: {
     guardian: ChogGuardianProfile | null;
     careXp: number;
@@ -2468,6 +2471,9 @@ export default function Web3HealthPage() {
           connectedApps: entry.connectedApps,
           rewardPoints: entry.rewardPoints,
           guardianData: entry.guardianData,
+          dailyRecords: entry.dailyRecords,
+          connectedHealthApps: entry.connectedHealthApps,
+          healthPermissions: entry.healthPermissions,
         }),
       });
       if (!response.ok) {
@@ -2548,7 +2554,7 @@ export default function Web3HealthPage() {
     window.localStorage.setItem(walletRegistryStorageKey, JSON.stringify(normalized));
   };
 
-  const upsertWalletRegistry = (entry: WalletRegistryEntry) => {
+  const upsertWalletRegistry = (entry: WalletRegistryEntry, syncBackend = true) => {
     const storedRegistry = getStoredWalletRegistry();
     const existing = storedRegistry.find((item) => item.wallet.toLowerCase() === entry.wallet.toLowerCase());
     const nextEntry = normalizeWalletRegistryEntry({
@@ -2561,7 +2567,7 @@ export default function Web3HealthPage() {
       ...storedRegistry.filter((item) => item.wallet.toLowerCase() !== entry.wallet.toLowerCase()),
       nextEntry,
     ]);
-    void syncWalletRegistryEntry(nextEntry);
+    if (syncBackend) void syncWalletRegistryEntry(nextEntry);
   };
 
   const rememberProviderAccounts = (accounts: string[]) => {
@@ -2576,7 +2582,7 @@ export default function Web3HealthPage() {
         connectedApps: existing?.connectedApps ?? 0,
         rewardPoints: existing?.rewardPoints ?? 0,
         resetAt: existing?.resetAt,
-      });
+      }, false);
     });
   };
 
@@ -2724,7 +2730,7 @@ export default function Web3HealthPage() {
   }, [isAdminWallet, walletAddress]);
 
   useEffect(() => {
-    if (!walletAddress) return;
+    if (!walletAddress || hydratedWalletRef.current !== walletAddress.toLowerCase()) return;
 
     const now = new Date().toISOString();
     const existing = getStoredWalletRegistry().find((entry) => entry.wallet.toLowerCase() === walletAddress.toLowerCase());
@@ -2743,14 +2749,19 @@ export default function Web3HealthPage() {
         lastProofWeek: lastGuardianProofWeek,
         proofReference: guardianProofTxHash,
       },
+      dailyRecords,
+      connectedHealthApps,
+      healthPermissions,
     });
   }, [
     careXp,
     chogGuardian,
     chogTraits,
-    connectedHealthApps.length,
+    connectedHealthApps,
+    dailyRecords,
     displayName,
     guardianProofTxHash,
+    healthPermissions,
     lastGuardianProofWeek,
     rewardPoints,
     walletAddress,
@@ -2824,13 +2835,27 @@ export default function Web3HealthPage() {
         } catch {
           savedQuest = {};
         }
-        const questCompletedToday = savedQuest.lastCompletedDate === todayKey;
+        const backendDailyRecords = normalizeDailyRecords(backendProfile?.dailyRecords ?? {});
+        const savedTodayRecord = backendDailyRecords[todayKey];
+        const questCompletedToday = savedQuest.lastCompletedDate === todayKey || Boolean(savedTodayRecord?.chogQuestCompleted);
         const demoTodayRecord = {
           ...createDailyRecord(todayKey),
-          eyeBreakCount: questCompletedToday ? 3 : 2,
+          ...savedTodayRecord,
+          eyeBreakCount: Math.max(savedTodayRecord?.eyeBreakCount ?? 0, questCompletedToday ? 3 : 2),
           postureResetDone: true,
-          completedProofActions: questCompletedToday ? [...syncableProofLabels, "Chog Reset Quest"] : syncableProofLabels,
-          completedRewardMissions: questCompletedToday ? ["Complete Chog Reset Quest"] : [],
+          completedProofActions: Array.from(
+            new Set([
+              ...(savedTodayRecord?.completedProofActions ?? []),
+              ...syncableProofLabels,
+              ...(questCompletedToday ? ["Chog Reset Quest"] : []),
+            ]),
+          ),
+          completedRewardMissions: Array.from(
+            new Set([
+              ...(savedTodayRecord?.completedRewardMissions ?? []),
+              ...(questCompletedToday ? ["Complete Chog Reset Quest"] : []),
+            ]),
+          ),
           chogQuestCompleted: questCompletedToday,
         };
         setDisplayName("Mervyn");
@@ -2843,19 +2868,19 @@ export default function Web3HealthPage() {
         setChogTraits(backendProfile?.guardianData?.traits?.length ? backendProfile.guardianData.traits : ["Focus antenna", "Recovery aura", "Calm trader"]);
         setLastGuardianProofWeek(backendProfile?.guardianData?.lastProofWeek ?? "");
         setGuardianProofTxHash(backendProfile?.guardianData?.proofReference ?? "");
-        setLastChogQuestDate(savedQuest.lastCompletedDate ?? "");
-        setChogQuestStreak(savedQuest.streak ?? 0);
-        setEyeBreakCount(questCompletedToday ? 3 : 2);
+        setLastChogQuestDate(savedQuest.lastCompletedDate ?? (questCompletedToday ? todayKey : ""));
+        setChogQuestStreak(savedQuest.streak ?? (questCompletedToday ? 1 : 0));
+        setEyeBreakCount(demoTodayRecord.eyeBreakCount);
         setWeeklyEyeBreaks(18);
         setWeeklyStressChecks(9);
         setWeeklySleepBoundaries(4);
         setRewardPoints(savedQuest.rewardPoints ?? 1280);
         setConnectedHealthApps(demoConnectedHealthApps);
         setHealthContextConnectedDate(getGmt8WeekKey());
-        setDailyRecords({ [todayKey]: demoTodayRecord });
+        setDailyRecords({ ...backendDailyRecords, [todayKey]: demoTodayRecord });
         setHealthPermissions(demoHealthPermissions);
-        setCompletedProofActions(questCompletedToday ? [...syncableProofLabels, "Chog Reset Quest"] : syncableProofLabels);
-        setCompletedRewardMissions(questCompletedToday ? ["Complete Chog Reset Quest"] : []);
+        setCompletedProofActions(demoTodayRecord.completedProofActions);
+        setCompletedRewardMissions(demoTodayRecord.completedRewardMissions);
         hydratedWalletRef.current = normalizedWallet;
         return;
       }
@@ -2900,9 +2925,14 @@ export default function Web3HealthPage() {
         setWeeklyStressChecks(shouldResetWeeklyCounters ? 0 : profile.weeklyStressChecks ?? 0);
         setWeeklySleepBoundaries(shouldResetWeeklyCounters ? 0 : profile.weeklySleepBoundaries ?? 0);
         setRewardPoints(profile.rewardPoints ?? 0);
-        setConnectedHealthApps(profile.connectedHealthApps ?? []);
-        setHealthContextConnectedDate(profile.healthContextConnectedDate ?? "");
-        const normalizedRecords = normalizeDailyRecords(profile.dailyRecords ?? {});
+        setConnectedHealthApps(profile.connectedHealthApps ?? backendProfile?.connectedHealthApps ?? []);
+        setHealthContextConnectedDate(
+          profile.healthContextConnectedDate ?? Object.keys(backendProfile?.dailyRecords ?? {}).sort()[0] ?? "",
+        );
+        const normalizedRecords = normalizeDailyRecords({
+          ...(profile.dailyRecords ?? {}),
+          ...(backendProfile?.dailyRecords ?? {}),
+        });
         const restoredEyeBreakCount = shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0;
         const restoredProofActions = shouldResetDailyTasks ? [] : profile.completedProofActions ?? [];
         const restoredRewardMissions = shouldResetDailyTasks ? [] : profile.completedRewardMissions ?? [];
@@ -2943,7 +2973,7 @@ export default function Web3HealthPage() {
               }
             : normalizedRecords;
         setDailyRecords(mergedDailyRecords);
-        setHealthPermissions(profile.healthPermissions ?? emptyHealthPermissions);
+        setHealthPermissions(profile.healthPermissions ?? backendProfile?.healthPermissions ?? emptyHealthPermissions);
         setCompletedRewardMissions(restoredRewardMissions);
         setCompletedProofActions(restoredProofActions);
         setCompletedGuardianActions(shouldResetDailyTasks ? [] : profile.completedGuardianActions ?? []);
@@ -2958,6 +2988,12 @@ export default function Web3HealthPage() {
       }
 
       resetToEmptyWallet(normalizedWallet);
+      const backendDailyRecords = normalizeDailyRecords(backendProfile?.dailyRecords ?? {});
+      setDailyRecords(backendDailyRecords);
+      setConnectedHealthApps(backendProfile?.connectedHealthApps ?? []);
+      setHealthPermissions(backendProfile?.healthPermissions ?? emptyHealthPermissions);
+      setHealthContextConnectedDate(Object.keys(backendDailyRecords).sort()[0] ?? "");
+      setRewardPoints(backendProfile?.rewardPoints ?? 0);
       if (backendProfile?.displayName) {
         setDisplayName(backendProfile.displayName);
         setPendingDisplayName(backendProfile.displayName);
@@ -3382,8 +3418,7 @@ export default function Web3HealthPage() {
           rewardPoints: existing?.rewardPoints ?? 0,
           resetAt: existing?.resetAt,
         };
-        upsertWalletRegistry(nextRegistryEntry);
-        await syncWalletRegistryEntry(nextRegistryEntry);
+        upsertWalletRegistry(nextRegistryEntry, false);
         setWalletAddress(nextWallet);
       } else {
         setWalletError("Wallet did not return an account.");
