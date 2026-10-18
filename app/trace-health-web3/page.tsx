@@ -2893,6 +2893,9 @@ export default function Web3HealthPage() {
         setHealthPermissions(demoHealthPermissions);
         setCompletedProofActions(demoTodayRecord.completedProofActions);
         setCompletedRewardMissions(demoTodayRecord.completedRewardMissions);
+        setCompletedMarketActions(demoTodayRecord.completedMarketActions);
+        setJournalSelections(demoTodayRecord.journalSelections);
+        setPostureResetDone(demoTodayRecord.postureResetDone);
         hydratedWalletRef.current = normalizedWallet;
         return;
       }
@@ -2946,21 +2949,39 @@ export default function Web3HealthPage() {
           ...(profile.dailyRecords ?? {}),
           ...(backendProfile?.dailyRecords ?? {}),
         });
-        const restoredEyeBreakCount = shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0;
-        const restoredProofActions = shouldResetDailyTasks ? [] : profile.completedProofActions ?? [];
-        const restoredRewardMissions = shouldResetDailyTasks ? [] : profile.completedRewardMissions ?? [];
-        const restoredMarketActions = shouldResetDailyTasks ? [] : profile.completedMarketActions ?? [];
-        const restoredJournalSelections = shouldResetDailyTasks ? {} : profile.journalSelections ?? {};
-        const restoredPostureResetDone = shouldResetDailyTasks ? false : profile.postureResetDone ?? false;
         const existingTodayRecord = normalizedRecords[todayKey];
+        const localProofActions = shouldResetDailyTasks ? [] : profile.completedProofActions ?? [];
+        const localRewardMissions = shouldResetDailyTasks ? [] : profile.completedRewardMissions ?? [];
+        const localMarketActions = shouldResetDailyTasks ? [] : profile.completedMarketActions ?? [];
+        const localJournalSelections = shouldResetDailyTasks ? {} : profile.journalSelections ?? {};
+        const restoredEyeBreakCount = Math.max(
+          existingTodayRecord?.eyeBreakCount ?? 0,
+          shouldResetDailyTasks ? 0 : profile.eyeBreakCount ?? 0,
+        );
+        const restoredProofActions = Array.from(
+          new Set([...(existingTodayRecord?.completedProofActions ?? []), ...localProofActions]),
+        );
+        const restoredRewardMissions = Array.from(
+          new Set([...(existingTodayRecord?.completedRewardMissions ?? []), ...localRewardMissions]),
+        );
+        const restoredMarketActions = Array.from(
+          new Set([...(existingTodayRecord?.completedMarketActions ?? []), ...localMarketActions]),
+        );
+        const restoredJournalSelections = {
+          ...(existingTodayRecord?.journalSelections ?? {}),
+          ...localJournalSelections,
+        };
+        const restoredPostureResetDone = Boolean(
+          existingTodayRecord?.postureResetDone || (!shouldResetDailyTasks && profile.postureResetDone),
+        );
         const shouldMergeTodayState =
-          !shouldResetDailyTasks &&
-          (restoredEyeBreakCount > 0 ||
-            restoredProofActions.length > 0 ||
-            restoredRewardMissions.length > 0 ||
-            restoredMarketActions.length > 0 ||
-            Object.keys(restoredJournalSelections).length > 0 ||
-            restoredPostureResetDone);
+          Boolean(existingTodayRecord) ||
+          restoredEyeBreakCount > 0 ||
+          restoredProofActions.length > 0 ||
+          restoredRewardMissions.length > 0 ||
+          restoredMarketActions.length > 0 ||
+          Object.keys(restoredJournalSelections).length > 0 ||
+          restoredPostureResetDone;
         const mergedDailyRecords =
           shouldMergeTodayState
             ? {
@@ -2986,6 +3007,7 @@ export default function Web3HealthPage() {
               }
             : normalizedRecords;
         setDailyRecords(mergedDailyRecords);
+        setEyeBreakCount(restoredEyeBreakCount);
         setHealthPermissions(profile.healthPermissions ?? backendProfile?.healthPermissions ?? emptyHealthPermissions);
         setCompletedRewardMissions(restoredRewardMissions);
         setCompletedProofActions(restoredProofActions);
@@ -3002,7 +3024,14 @@ export default function Web3HealthPage() {
 
       resetToEmptyWallet(normalizedWallet);
       const backendDailyRecords = normalizeDailyRecords(backendProfile?.dailyRecords ?? {});
+      const backendTodayRecord = backendDailyRecords[todayKey];
       setDailyRecords(backendDailyRecords);
+      setEyeBreakCount(backendTodayRecord?.eyeBreakCount ?? 0);
+      setPostureResetDone(backendTodayRecord?.postureResetDone ?? false);
+      setCompletedProofActions(backendTodayRecord?.completedProofActions ?? []);
+      setCompletedRewardMissions(backendTodayRecord?.completedRewardMissions ?? []);
+      setCompletedMarketActions(backendTodayRecord?.completedMarketActions ?? []);
+      setJournalSelections(backendTodayRecord?.journalSelections ?? {});
       setConnectedHealthApps(backendProfile?.connectedHealthApps ?? []);
       setHealthPermissions(backendProfile?.healthPermissions ?? emptyHealthPermissions);
       setHealthContextConnectedDate(Object.keys(backendDailyRecords).sort()[0] ?? "");
