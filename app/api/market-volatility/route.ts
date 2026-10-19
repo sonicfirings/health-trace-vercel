@@ -27,16 +27,31 @@ type BinanceKline = [
 
 type MarketVolatilitySnapshot = {
   symbol: "BTCUSDT";
+  price: number;
   currentVolatility: number;
   baselineVolatility: number;
   changeVsBaseline: number;
   chart: number[];
+  fearGreed: {
+    value: number;
+    classification: string;
+    updatedAt: string;
+    source: "Alternative.me";
+  } | null;
   source: "Binance BTCUSDT hourly candles";
   updatedAt: string;
   stale: boolean;
 };
 
 let lastSuccessfulSnapshot: MarketVolatilitySnapshot | null = null;
+
+type FearGreedResponse = {
+  data?: Array<{
+    value?: string;
+    value_classification?: string;
+    timestamp?: string;
+  }>;
+};
 
 const round = (value: number, digits = 1) => Number(value.toFixed(digits));
 
@@ -50,7 +65,10 @@ const standardDeviation = (values: number[]) => {
 const annualizedVolatility = (returns: number[]) =>
   standardDeviation(returns) * Math.sqrt(24 * 365) * 100;
 
-const buildSnapshot = (klines: BinanceKline[]): MarketVolatilitySnapshot => {
+const buildSnapshot = (
+  klines: BinanceKline[],
+  fearGreed: MarketVolatilitySnapshot["fearGreed"],
+): MarketVolatilitySnapshot => {
   const closes = klines.map((kline) => Number(kline[4])).filter((price) => Number.isFinite(price) && price > 0);
   if (closes.length < KLINE_LIMIT) {
     throw new Error("Binance returned insufficient BTC candle history.");
@@ -71,13 +89,37 @@ const buildSnapshot = (klines: BinanceKline[]): MarketVolatilitySnapshot => {
 
   return {
     symbol: "BTCUSDT",
+    price: round(closes[closes.length - 1] ?? 0, 2),
     currentVolatility: round(currentVolatility),
     baselineVolatility: round(baselineVolatility),
     changeVsBaseline: round(changeVsBaseline),
     chart,
+    fearGreed,
     source: "Binance BTCUSDT hourly candles",
     updatedAt: new Date().toISOString(),
     stale: false,
+  };
+};
+
+const fetchFearGreed = async (): Promise<MarketVolatilitySnapshot["fearGreed"]> => {
+  const response = await fetch("https://api.alternative.me/fng/?limit=1&format=json", {
+    headers: { accept: "application/json" },
+    next: { revalidate: CACHE_SECONDS },
+  });
+  if (!response.ok) throw new Error(`Fear and Greed feed returned ${response.status}.`);
+
+  const payload = (await response.json()) as FearGreedResponse;
+  const latest = payload.data?.[0];
+  const value = Number(latest?.value);
+  if (!Number.isFinite(value)) throw new Error("Fear and Greed feed returned an invalid value.");
+
+  return {
+    value,
+    classification: latest?.value_classification?.trim() || "Neutral",
+    updatedAt: latest?.timestamp
+      ? new Date(Number(latest.timestamp) * 1000).toISOString()
+      : new Date().toISOString(),
+    source: "Alternative.me",
   };
 };
 
@@ -109,7 +151,11 @@ const fetchBinanceKlines = async () => {
 
 export async function GET() {
   try {
-    const snapshot = buildSnapshot(await fetchBinanceKlines());
+    const [klines, fearGreed] = await Promise.all([
+      fetchBinanceKlines(),
+      fetchFearGreed().catch(() => lastSuccessfulSnapshot?.fearGreed ?? null),
+    ]);
+    const snapshot = buildSnapshot(klines, fearGreed);
     lastSuccessfulSnapshot = snapshot;
     return NextResponse.json(snapshot, {
       headers: {

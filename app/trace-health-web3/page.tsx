@@ -211,13 +211,36 @@ type HealthDailyRecord = {
 
 type MarketVolatilitySnapshot = {
   symbol: "BTCUSDT";
+  price: number;
   currentVolatility: number;
   baselineVolatility: number;
   changeVsBaseline: number;
   chart: number[];
+  fearGreed: {
+    value: number;
+    classification: string;
+    updatedAt: string;
+    source: "Alternative.me";
+  } | null;
   source: string;
   updatedAt: string;
   stale: boolean;
+};
+
+type MarketSignalStat = {
+  label: string;
+  value: string;
+  source?: string;
+};
+
+type DashboardSignal = {
+  label: string;
+  value: string;
+  detail: string;
+  icon: typeof LayoutDashboard;
+  tone: string;
+  chart: number[];
+  marketStats?: MarketSignalStat[];
 };
 
 const getWalletProfileKey = (wallet: string) => `${walletProfileStoragePrefix}${wallet.toLowerCase()}`;
@@ -804,7 +827,7 @@ const weeklyDemoContexts: Omit<
   },
 ];
 
-const homeSignals = [
+const homeSignals: DashboardSignal[] = [
   {
     label: "Health Trace Score",
     value: "86",
@@ -1175,6 +1198,7 @@ function MetricCard({
   icon: Icon,
   tone,
   chart,
+  marketStats,
 }: {
   label: string;
   value: string;
@@ -1182,6 +1206,7 @@ function MetricCard({
   icon: typeof LayoutDashboard;
   tone: string;
   chart: number[];
+  marketStats?: MarketSignalStat[];
 }) {
   return (
     <motion.div
@@ -1198,6 +1223,19 @@ function MetricCard({
       <p className="text-xs text-[#716982]">{label}</p>
       <p className="mt-1 text-2xl font-medium text-[#21143A]">{value}</p>
       <p className="mt-1 text-xs leading-5 text-[#817793]">{detail}</p>
+      {marketStats?.length ? (
+        <div className="mt-3 space-y-2 border-t border-[#E8E2F2] pt-3">
+          {marketStats.map((stat) => (
+            <div key={stat.label} className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[0.65rem] uppercase tracking-[0.12em] text-[#8A8098]">{stat.label}</p>
+                {stat.source ? <p className="mt-0.5 text-[0.62rem] text-[#9A8FA8]">{stat.source}</p> : null}
+              </div>
+              <p className="text-right text-sm font-semibold text-[#21143A]">{stat.value}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="mt-auto pt-3">
         <MiniChart data={chart} />
       </div>
@@ -2308,6 +2346,20 @@ export default function Web3HealthPage() {
   const liveVolatilityFeedNote = liveMarketVolatility
     ? `${liveVolatilityDetail} | Binance | ${liveMarketVolatility.stale ? "cached" : `updated ${liveVolatilityUpdatedLabel}`}`
     : liveVolatilityDetail;
+  const liveBtcPrice = liveMarketVolatility
+    ? new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      }).format(liveMarketVolatility.price)
+    : "--";
+  const liveFearGreed = liveMarketVolatility?.fearGreed
+    ? `${liveMarketVolatility.fearGreed.value} ${liveMarketVolatility.fearGreed.classification}`
+    : "--";
+  const liveMarketStats: MarketSignalStat[] = [
+    { label: "BTC price", value: liveBtcPrice, source: "Binance" },
+    { label: "Fear & Greed", value: liveFearGreed, source: "Alternative.me" },
+  ];
   const liveMarketStress = baseCurrentDayRecord && liveMarketVolatility
     ? Math.min(
         100,
@@ -2408,6 +2460,7 @@ export default function Web3HealthPage() {
         chart: currentDayRecord
           ? dashboardMarketSeries
           : liveMarketVolatility?.chart ?? [0, 0, 0, 0, 0, 0, 0],
+        marketStats: liveMarketStats,
       };
     }
     if (signal.label === "Sleep Debt") {
@@ -4369,6 +4422,23 @@ export default function Web3HealthPage() {
                                 {signal.value}
                               </p>
                               <p className="mt-2 min-h-8 text-xs leading-4 text-[#7A6F86]">{signal.detail}</p>
+                              {signal.marketStats?.length ? (
+                                <div className="mt-3 space-y-2 border-t border-[#E8E2F2] pt-3">
+                                  {signal.marketStats.map((stat) => (
+                                    <div key={stat.label} className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="text-[0.62rem] uppercase tracking-[0.1em] text-[#8A8098]">
+                                          {stat.label}
+                                        </p>
+                                        {stat.source ? (
+                                          <p className="mt-0.5 text-[0.58rem] text-[#9A8FA8]">{stat.source}</p>
+                                        ) : null}
+                                      </div>
+                                      <p className="text-right text-sm font-semibold text-[#21143A]">{stat.value}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
                               {index === 0 ? (
                                 <div className="mt-3 h-10">
                                   <MiniChart data={signal.chart} />
