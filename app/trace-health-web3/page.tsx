@@ -1007,21 +1007,21 @@ const guardianProtocolActions = [
 const journalEntries = [
   {
     label: "FOMO",
-    value: "Medium",
-    detail: "Triggered by token volatility and Discord alerts.",
-    action: "Delay major decisions for 10 minutes.",
+    value: "Choose level",
+    detail: "How strongly are market moves or social alerts pulling you to act?",
+    action: "Choose Low, Mid, or High.",
   },
   {
     label: "FUD",
-    value: "Low",
-    detail: "No sustained fear signal from today's check-ins.",
-    action: "Keep notifications batched.",
+    value: "Choose level",
+    detail: "How much fear or uncertainty is affecting your decisions right now?",
+    action: "Choose Low, Mid, or High.",
   },
   {
     label: "Revenge trade urge",
-    value: "Watch",
-    detail: "Appears when sleep is below baseline and charts are open late.",
-    action: "Use a cool-down prompt before high-risk actions.",
+    value: "Choose level",
+    detail: "How strong is the urge to win back a loss with another action?",
+    action: "Choose Low, Mid, or High.",
   },
 ];
 
