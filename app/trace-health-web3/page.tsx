@@ -98,7 +98,7 @@ const chogGenesisContractAddress =
   process.env.NEXT_PUBLIC_CHOG_GENESIS_CONTRACT ?? "0xc96d31f8626c6d03fae5dcd3d61e3fb9f4a73763";
 const traceChogGuardianContractAddress = process.env.NEXT_PUBLIC_TRACE_CHOG_GUARDIAN_CONTRACT ?? "";
 const chogGuardianImage = "/chog/chog-guardian.png";
-const chogLoginHeroImage = "/chog/chog-login-hero.png";
+const chogLoginHeroImage = "/chog/chog-login-hero-v2.png";
 const chogGenesisAbi = [
   "function balanceOf(address owner) view returns (uint256)",
   "function tokensOfOwner(address owner) view returns (uint256[])",
